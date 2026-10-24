@@ -1,0 +1,15 @@
+# Fahrzeug-Exporte (enthalten FIN und Nutzer-ID) – nie einchecken
+*.json
+*.zip
+*.csv
+*no_content_found*
+exports/
+data/
+
+# Lokale Tool-Konfiguration
+.claude/
+
+# System
+Thumbs.db
+desktop.ini
+.DS_Store

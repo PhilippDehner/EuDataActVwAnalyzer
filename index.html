@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cupra Datenexport</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='6' width='16' height='12' rx='2' fill='none' stroke='%23b0703e' stroke-width='2'/%3E%3Crect x='19' y='10' width='2' height='4' fill='%23b0703e'/%3E%3Crect x='5' y='8' width='8' height='8' fill='%23b0703e'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>Cupra Datenexport</h1>
+      <div class="sub" id="vehicleLine">EU Data Act · lokal im Browser</div>
+    </div>
+  </div>
+  <div class="actions">
+    <label class="btn primary">Dateien laden
+      <input type="file" id="fileInput" multiple accept=".json,.zip,.csv,application/json,application/zip,text/csv" hidden>
+    </label>
+    <label class="btn">Ordner laden
+      <input type="file" id="dirInput" webkitdirectory multiple hidden>
+    </label>
+    <button class="btn" id="vinToggle" type="button" title="FIN in der Anzeige ausblenden">FIN ausblenden</button>
+    <button class="btn ghost" id="clearBtn" type="button">Alles entfernen</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs" hidden>
+  <button data-tab="overview" class="active">Übersicht</button>
+  <button data-tab="history">Verlauf</button>
+  <button data-tab="activity">Aktivität</button>
+  <button data-tab="raw">Rohdaten</button>
+  <button data-tab="files">Dateien</button>
+</nav>
+
+<main id="main">
+  <section id="empty" class="empty">
+    <div class="drop" id="dropZone">
+      <div class="drop-icon" aria-hidden="true"></div>
+      <h2>Export hierher ziehen</h2>
+      <p>JSON-Dateien oder ZIP-Archive aus dem VW&nbsp;Group EU&nbsp;Data&nbsp;Act&nbsp;Portal – gerne viele auf einmal oder einen ganzen Ordner.</p>
+      <p class="muted">Alles bleibt auf diesem Rechner. Es werden keine Daten hochgeladen.</p>
+    </div>
+  </section>
+
+  <section id="view-overview" class="view" hidden></section>
+  <section id="view-history" class="view" hidden></section>
+  <section id="view-activity" class="view" hidden></section>
+  <section id="view-raw" class="view" hidden></section>
+  <section id="view-files" class="view" hidden></section>
+</main>
+
+<div class="drop-overlay" id="dropOverlay" hidden><div>Loslassen zum Laden</div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="lib/jszip.min.js"></script>
+<script src="lib/chart.umd.min.js"></script>
+<script src="lib/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="lib/hammer.min.js"></script>
+<script src="lib/chartjs-plugin-zoom.min.js"></script>
+<script src="fields.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
