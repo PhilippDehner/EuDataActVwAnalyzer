@@ -6,10 +6,15 @@
 // ---------- Hilfsfunktionen ----------
 const $ = (sel, el = document) => el.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const nf = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 });
-const nf0 = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 0 });
-const dtf = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'medium' });
-const dtfShort = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+let nf, nf0, dtf, dtfShort;   // abhängig von der Sprache, siehe setFormatters()
+function setFormatters() {
+  const L = t('locale');
+  nf = new Intl.NumberFormat(L, { maximumFractionDigits: 2 });
+  nf0 = new Intl.NumberFormat(L, { maximumFractionDigits: 0 });
+  dtf = new Intl.DateTimeFormat(L, { dateStyle: 'medium', timeStyle: 'medium' });
+  dtfShort = new Intl.DateTimeFormat(L, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+setFormatters();
 const fmtDate = d => (d instanceof Date && !isNaN(d)) ? dtf.format(d) : '–';
 const fmtShort = d => (d instanceof Date && !isNaN(d)) ? dtfShort.format(d) : '–';
 const lastSeg = f => f.split('.').pop();
@@ -60,7 +65,14 @@ function prettyName(field) {
   const seg = field.split('.').slice(-2).join(' · ').replace(/_/g, ' ');
   return seg.charAt(0).toUpperCase() + seg.slice(1);
 }
-const meta = f => FIELD_META[f] || { label: prettyName(f), group: guessGroup(f) };
+function meta(f) {
+  const m = FIELD_META[f];
+  if (!m) return { label: prettyName(f), group: guessGroup(f) };
+  if (lang === 'de') return m;
+  return { ...m, label: FIELD_EN[f] || m.label, note: m.note && (NOTE_EN[m.note] || m.note) };
+}
+// Gruppen sind intern deutsche Schlüssel
+const groupLabel = g => lang === 'en' ? (GROUP_EN[g] || g) : g;
 function guessGroup(f) {
   if (/^setup_real_speed_ratios/.test(f)) return 'Geschwindigkeitsprofil';
   if (/charg/.test(f)) return 'Laden';
@@ -71,7 +83,8 @@ function guessGroup(f) {
 }
 
 function enumLabel(s) {
-  if (ENUM_DE[s]) return ENUM_DE[s];
+  const dict = lang === 'en' ? ENUM_EN : ENUM_DE;
+  if (dict[s]) return dict[s];
   if (!/^[A-Z0-9_]+$/.test(s) || !s.includes('_')) return s;
   // Unbekannte Aufzählung: übliche Präfixe abschneiden und lesbar machen
   const t = s.replace(/^(CHARGE_STATE|CHARGE_TYPE|CHARGE_MODE_SELECTION|CHARGE_MODE|CHARGING_SCENARIO|CLIMATISATION_STATE|WINDOW_HEATING_STATE|UPDATE_REASON|REPORT_TYPE|IMMEDIATE_ACTION_STATE|TARGET_REACHABILITY|TRIGGER|MAX_CHARGE_CURRENT_AC|AUTO_UNLOCK_AC|VALUE_TYPE|CHARGE_RATE_UNIT)_/, '')
@@ -89,7 +102,7 @@ function fmtNum(field, n, withUnit = true) {
 function fmtParsed(field, p) {
   switch (p.t) {
     case 'num': return fmtNum(field, p.v);
-    case 'bool': return p.v ? 'ja' : 'nein';
+    case 'bool': return p.v ? t('yes') : t('no');
     case 'date': return fmtDate(p.v);
     default: return enumLabel(p.v);
   }
@@ -140,7 +153,7 @@ function buildFile({ name, text, source }) {
       recs = findRecords(json) ?? flatten(json).filter(r => !/^(vin|user_id)$/i.test(r.dataFieldName));
     }
   } catch (e) {
-    return { ...base, error: 'Konnte nicht gelesen werden: ' + e.message, records: [], byField: new Map() };
+    return { ...base, error: e.message, records: [], byField: new Map() };
   }
   const records = recs.map(r => {
     const f = String(r.dataFieldName ?? r.field ?? r.name ?? '').trim();
@@ -226,11 +239,11 @@ async function addFiles(fileList) {
       db.put(part);
     }
   }
-  const msg = [`${added} Export${added === 1 ? '' : 'e'} geladen`];
-  if (empty) msg.push(`${empty} leer`);
-  if (dup) msg.push(`${dup} bereits vorhanden`);
-  if (err) msg.push(`${err} fehlerhaft`);
-  if (skipped) msg.push(`${skipped} übersprungen`);
+  const msg = [t('toastLoaded', added)];
+  if (empty) msg.push(t('toastEmpty', empty));
+  if (dup) msg.push(t('toastDup', dup));
+  if (err) msg.push(t('toastErr', err));
+  if (skipped) msg.push(t('toastSkipped', skipped));
   toast(msg.join(' · '));
   state.selectedFile = null;
   render();
@@ -322,25 +335,55 @@ function render() {
   const has = state.files.length > 0;
   $('#empty').hidden = has;
   $('#tabs').hidden = !has;
-  $('#vinToggle').textContent = state.hideVin ? 'FIN anzeigen' : 'FIN ausblenden';
+  $('#vinToggle').textContent = state.hideVin ? t('showVin') : t('hideVin');
   const vins = [...new Set(state.files.map(f => f.vin).filter(Boolean))];
   const fs = sortedFiles();
   $('#vehicleLine').textContent = has
-    ? `${vins.length ? 'FIN ' + vins.map(maskVin).join(', ') : 'FIN unbekannt'} · ${fs.length} Export${fs.length === 1 ? '' : 'e'}` +
+    ? `${vins.length ? t('vin') + ' ' + vins.map(maskVin).join(', ') : t('vinUnknown')} · ${t('nExports', fs.length)}` +
       (fs.length > 1 ? ` · ${fmtShort(fileTime(fs[0]))} – ${fmtShort(fileTime(fs[fs.length - 1]))}` : fs.length ? ` · ${fmtShort(fileTime(fs[0]))}` : '')
-    : 'EU Data Act · lokal im Browser';
+    : t('tagline');
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
   for (const v of ['overview', 'history', 'activity', 'raw', 'files']) $('#view-' + v).hidden = !has || v !== state.tab;
   destroyCharts();
   if (!has) return;
   ({ overview: renderOverview, history: renderHistory, activity: renderActivity, raw: renderRaw, files: renderFiles })[state.tab]();
+  document.querySelectorAll('table[id]').forEach(restoreSort);
+}
+
+// ---------- Tabellen sortieren ----------
+// Klick auf eine Spaltenüberschrift sortiert (auf-, dann absteigend). Zellen können mit
+// data-sort einen Sortierwert vorgeben (z. B. Zeitstempel), sonst zählt der sichtbare Text.
+// Die Auswahl gilt je Tabellen-ID und überlebt erneutes Rendern.
+const sorts = store.get('sorts', {});
+function sortTable(table, col, dir) {
+  const tbody = table.tBodies[0]; if (!tbody) return;
+  const val = tr => { const td = tr.cells[col]; return td ? (td.dataset.sort ?? td.textContent.trim()) : ''; };
+  const cmp = (a, b) => {
+    if (a === '' || b === '') return (a === '') - (b === '');   // Leere immer ans Ende
+    const na = Number(a), nb = Number(b);
+    if (!isNaN(na) && !isNaN(nb)) return (na - nb) * dir;
+    return a.localeCompare(b, lang, { numeric: true, sensitivity: 'base' }) * dir;
+  };
+  const rows = [...tbody.rows].map(tr => [tr, val(tr)]).sort((x, y) => cmp(x[1], y[1]));
+  tbody.append(...rows.map(r => r[0]));
+  [...table.tHead.rows[0].cells].forEach((th, i) => {
+    th.classList.toggle('sorted', i === col);
+    if (th.hasAttribute('data-nosort')) return;
+    th.setAttribute('aria-sort', i === col ? (dir > 0 ? 'ascending' : 'descending') : 'none');
+  });
+}
+function restoreSort(table) {
+  if (!table?.tHead) return;
+  [...table.tHead.rows[0].cells].forEach(th => { if (!th.hasAttribute('data-nosort')) th.classList.add('sortable'); });
+  const s = sorts[table.id];
+  if (s) sortTable(table, s.col, s.dir);
 }
 
 // ----- Übersicht -----
 function renderOverview() {
   const el = $('#view-overview');
   const fs = sortedFiles();
-  if (!fs.length) { el.innerHTML = `<div class="hint">Die geladenen Dateien enthalten keine Daten (z.&nbsp;B. <span class="mono">_no_content_found</span>).</div>`; return; }
+  if (!fs.length) { el.innerHTML = `<div class="hint">${t('noDataHtml')}</div>`; return; }
   const file = fs.find(f => f.id === state.selectedFile) || fs[fs.length - 1];
   const S = f => summary(file, f);
   const opts = [...fs].reverse().map(f => `<option value="${esc(f.id)}" ${f === file ? 'selected' : ''}>${esc(fmtDate(fileTime(f)))} – ${esc(f.name.split(/[\\/]/).pop())}</option>`).join('');
@@ -355,14 +398,14 @@ function renderOverview() {
   if (soc) {
     const lo = soc.min, hi = soc.max;
     const marks = [];
-    if (target) marks.push(`<div class="battery-mark" style="left:${target.max}%" title="Ziel-Ladestand"><span>Ziel ${nf.format(target.max)}&nbsp;%</span></div>`);
-    if (care && (!target || care.max !== target.max)) marks.push(`<div class="battery-mark" style="left:${care.max}%;opacity:.5" title="Batterieschonung"><span>Schonung ${nf.format(care.max)}&nbsp;%</span></div>`);
+    if (target) marks.push(`<div class="battery-mark" style="left:${target.max}%" title="${esc(t('markTargetTitle'))}"><span>${esc(t('markTarget'))} ${nf.format(target.max)}&nbsp;%</span></div>`);
+    if (care && (!target || care.max !== target.max)) marks.push(`<div class="battery-mark" style="left:${care.max}%;opacity:.5" title="${esc(t('markCareTitle'))}"><span>${esc(t('markCare'))} ${nf.format(care.max)}&nbsp;%</span></div>`);
     hero = `<div class="card kpi hero">
-      <div class="label">Ladestand</div>
+      <div class="label">${esc(t('soc'))}</div>
       <div class="value">${lo === hi ? nf.format(lo) : nf.format(lo) + '–' + nf.format(hi)}<small>%</small></div>
-      <div class="note">${soc.nums.length > 1 ? `${soc.nums.length} Meldungen in diesem Export: ${soc.nums.map(n => nf.format(n)).join(' · ')} %` : 'eine Meldung in diesem Export'}</div>
+      <div class="note">${esc(soc.nums.length > 1 ? t('socNoteMulti', soc.nums.length, soc.nums.map(n => nf.format(n)).join(' · ')) : t('socNoteOne'))}</div>
       <div class="battery">
-        <div class="battery-bar" role="img" aria-label="Ladestand ${lo} bis ${hi} Prozent">
+        <div class="battery-bar" role="img" aria-label="${esc(t('socAria', lo, hi))}">
           <div class="battery-fill" style="width:${lo}%"></div>
           ${hi > lo ? `<div class="battery-range" style="left:${lo}%;width:${hi - lo}%"></div>` : ''}
           ${marks.join('')}
@@ -379,7 +422,7 @@ function renderOverview() {
     const txt = displaySummary(field, s, { prefer });
     const [num, ...unit] = txt.split(' ');
     const multi = s.distinct.length > 1 && prefer !== 'max';
-    const note = extra || (multi ? `${s.vals.length} Meldungen` : (m.note || ''));
+    const note = extra || (multi ? t('nMessages', s.vals.length) : (m.note || ''));
     return `<div class="card kpi" title="${esc(field)}${m.note ? ' – ' + esc(m.note) : ''}">
       <div class="label">${esc(label || m.label)}</div>
       <div class="value">${esc(num)}${unit.length ? `<small>${esc(unit.join(' '))}</small>` : ''}</div>
@@ -387,7 +430,7 @@ function renderOverview() {
   };
 
   let energyExtra = '';
-  if (eCur && eMax) energyExtra = `von ${fmtNum('energy_contents.maximal_energy_content.physical_value', eMax.max)} (≈ ${nf0.format(eCur.max / eMax.max * 100)} %)`;
+  if (eCur && eMax) energyExtra = t('energyOf', fmtNum('energy_contents.maximal_energy_content.physical_value', eMax.max), nf0.format(eCur.max / eMax.max * 100));
 
   const tiles = [
     tile('energy_contents.current_energy_content.physical_value', { extra: energyExtra }),
@@ -427,28 +470,27 @@ function renderOverview() {
 
   el.innerHTML = `
     <div class="toolbar">
-      <label>Stand <select id="fileSel">${opts}</select></label>
-      <span class="muted">Meldungen im Export: ${esc(range)}</span>
+      <label>${esc(t('snapshot'))} <select id="fileSel">${opts}</select></label>
+      <span class="muted">${esc(t('messagesInExport', range))}</span>
     </div>
-    ${fs.length === 1 ? '' : ''}
-    <div class="hint">Ein Export bündelt mehrere Fahrzeugmeldungen ohne Zuordnung, welcher Wert zu welcher Uhrzeit gehört. Unterscheiden sich Werte innerhalb eines Exports, zeigt die App den <b>Bereich</b> (z.&nbsp;B. 50–56&nbsp;%).</div>
+    <div class="hint">${t('rangeHintHtml')}</div>
     <div class="grid kpis">${hero}${tiles}</div>
-    ${chips ? `<div class="card"><div class="card-head"><h3>Status</h3><span class="muted">mehrere Werte = mehrere Meldungen im Export</span></div><div class="chips">${chips}</div></div>` : ''}
+    ${chips ? `<div class="card"><div class="card-head"><h3>${esc(t('status'))}</h3><span class="muted">${esc(t('statusNote'))}</span></div><div class="chips">${chips}</div></div>` : ''}
     <div class="grid two">
-      ${kvBlock('Ladeeinstellungen', [...byGroup('Laden').filter(f => /^settings\.|battery_care|charge_rate_unit/.test(f)), 'settings.target_soc'].filter((f, i, a) => a.indexOf(f) === i))}
-      ${kvBlock('Ladeoptionen', byGroup('Ladeoptionen'))}
-      ${kvBlock('Ladetimer', byGroup('Ladetimer'))}
-      ${kvBlock('Klima', byGroup('Klima').filter(f => f !== 'climatisation_state' && f !== 'window_heating_state' && f !== 'remaining_climate_time'))}
-      ${kvBlock('Verbrauch & Batterie', [...byGroup('Verbrauch'), 'energy_contents.maximal_energy_content.physical_value', 'battery_level_HV.value', 'battery_level_HV.state', 'mileage.state'])}
-      <div class="card"><div class="card-head"><h3>Export</h3></div><div class="kv">
-        <div>Datei</div><div class="mono">${esc(file.name.split(/[\\/]/).pop())}</div>
-        <div>FIN</div><div class="mono">${esc(maskVin(file.vin))}</div>
-        <div>Exportzeit (Dateiname, UTC)</div><div>${esc(fmtDate(file.exportTime))}</div>
-        <div>Erste Meldung</div><div>${esc(fmtDate(file.dataFrom))}</div>
-        <div>Letzte Meldung</div><div>${esc(fmtDate(file.dataTo))}</div>
-        <div>Datensätze / Felder</div><div>${file.records.length} / ${file.byField.size}</div>
+      ${kvBlock(t('chargeSettings'), [...byGroup('Laden').filter(f => /^settings\.|battery_care|charge_rate_unit/.test(f)), 'settings.target_soc'].filter((f, i, a) => a.indexOf(f) === i))}
+      ${kvBlock(groupLabel('Ladeoptionen'), byGroup('Ladeoptionen'))}
+      ${kvBlock(groupLabel('Ladetimer'), byGroup('Ladetimer'))}
+      ${kvBlock(groupLabel('Klima'), byGroup('Klima').filter(f => f !== 'climatisation_state' && f !== 'window_heating_state' && f !== 'remaining_climate_time'))}
+      ${kvBlock(t('consumptionBattery'), [...byGroup('Verbrauch'), 'energy_contents.maximal_energy_content.physical_value', 'battery_level_HV.value', 'battery_level_HV.state', 'mileage.state'])}
+      <div class="card"><div class="card-head"><h3>${esc(t('export'))}</h3></div><div class="kv">
+        <div>${esc(t('file'))}</div><div class="mono">${esc(file.name.split(/[\\/]/).pop())}</div>
+        <div>${esc(t('vin'))}</div><div class="mono">${esc(maskVin(file.vin))}</div>
+        <div>${esc(t('exportTimeName'))}</div><div>${esc(fmtDate(file.exportTime))}</div>
+        <div>${esc(t('firstMessage'))}</div><div>${esc(fmtDate(file.dataFrom))}</div>
+        <div>${esc(t('lastMessage'))}</div><div>${esc(fmtDate(file.dataTo))}</div>
+        <div>${esc(t('recordsFields'))}</div><div>${file.records.length} / ${file.byField.size}</div>
       </div>
-      ${msgTypes.length ? `<div style="margin-top:12px">${msgTypes.map(([k, n]) => `<span class="tag" title="Nachrichtentyp">${esc(k)} ×${n}</span>`).join('')}</div>` : ''}
+      ${msgTypes.length ? `<div style="margin-top:12px">${msgTypes.map(([k, n]) => `<span class="tag" title="${esc(t('messageType'))}">${esc(k)} ×${n}</span>`).join('')}</div>` : ''}
       </div>
     </div>`;
   $('#fileSel').onchange = e => { state.selectedFile = e.target.value; render(); };
@@ -465,12 +507,12 @@ function chartBase() {
   Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   Chart.defaults.color = css('--muted');
   Chart.defaults.borderColor = css('--grid');
-  Chart.defaults.locale = 'de-DE';
+  Chart.defaults.locale = t('locale');
 }
 function timeScale(span) {
   return {
     type: 'time',
-    time: { tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { minute: 'HH:mm', hour: 'dd.MM. HH:mm', day: 'dd.MM.', week: 'dd.MM.', month: 'MMM yyyy' } },
+    time: { tooltipFormat: t('chartFmt').tooltip, displayFormats: { minute: 'HH:mm', hour: t('chartFmt').hour, day: t('chartFmt').day, week: t('chartFmt').day, month: 'MMM yyyy' } },
     grid: { color: css('--grid') },
     ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
     ...(span || {}),
@@ -487,7 +529,7 @@ function renderHistory() {
   const fs = sortedFiles();
   const idx = fieldIndex();
   const numFields = [...idx.values()].filter(e => e.kind === 'num').map(e => e.f)
-    .sort((a, b) => (meta(a).group + meta(a).label).localeCompare(meta(b).group + meta(b).label, 'de'));
+    .sort((a, b) => (meta(a).group + meta(a).label).localeCompare(meta(b).group + meta(b).label, lang));
   const enumFields = [...idx.values()].filter(e => e.kind === 'str' || e.kind === 'bool').map(e => e.f)
     .filter(f => !/(message_id|transaction_id|value_type)$/.test(f));
   let sel = store.get('series', DEFAULT_SERIES).filter(f => numFields.includes(f));
@@ -499,22 +541,22 @@ function renderHistory() {
   for (const f of numFields) { const g = meta(f).group; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(f); }
 
   el.innerHTML = `
-    ${fs.length < 2 ? `<div class="hint"><b>Für Verläufe mehrere Exporte laden.</b> Aktuell ist ${fs.length} Export mit Daten geladen. Mit einer fortlaufenden Anfrage im Portal entsteht etwa alle 15&nbsp;Minuten eine Datei – lade einfach den ganzen Ordner oder alle ZIPs auf einmal.</div>` : ''}
+    ${fs.length < 2 ? `<div class="hint">${t('fewExportsHtml', fs.length)}</div>` : ''}
     <div class="card">
-      <div class="card-head"><h3>Messgrößen</h3>
+      <div class="card-head"><h3>${esc(t('metrics'))}</h3>
         <div class="toolbar">
-          <label>Zeitachse <select id="timeBase">
-            <option value="data" ${state.timeBase === 'data' ? 'selected' : ''}>letzte Meldung im Export</option>
-            <option value="export" ${state.timeBase === 'export' ? 'selected' : ''}>Exportzeit (Dateiname)</option>
+          <label>${esc(t('timeAxis'))} <select id="timeBase">
+            <option value="data" ${state.timeBase === 'data' ? 'selected' : ''}>${esc(t('timeBaseData'))}</option>
+            <option value="export" ${state.timeBase === 'export' ? 'selected' : ''}>${esc(t('timeBaseExport'))}</option>
           </select></label>
-          <span class="muted">Zoom: Bereich ziehen · Doppelklick zurücksetzen</span>
+          <span class="muted">${esc(t('zoomHint'))}</span>
         </div>
       </div>
-      ${[...groups].map(([g, fl]) => `<div style="margin-bottom:8px"><div class="muted" style="font-size:12px;margin-bottom:4px">${esc(g)}</div><div class="picker">${fl.map(f => `<label title="${esc(f)}"><input type="checkbox" value="${esc(f)}" ${sel.includes(f) ? 'checked' : ''}>${esc(meta(f).label)}</label>`).join('')}</div></div>`).join('')}
+      ${[...groups].map(([g, fl]) => `<div style="margin-bottom:8px"><div class="muted" style="font-size:12px;margin-bottom:4px">${esc(groupLabel(g))}</div><div class="picker">${fl.map(f => `<label title="${esc(f)}"><input type="checkbox" value="${esc(f)}" ${sel.includes(f) ? 'checked' : ''}>${esc(meta(f).label)}</label>`).join('')}</div></div>`).join('')}
     </div>
     <div class="grid two" id="seriesGrid"></div>
     ${enumSel ? `<div class="card">
-      <div class="card-head"><h3>Statusverlauf</h3>
+      <div class="card-head"><h3>${esc(t('statusHistory'))}</h3>
         <select id="enumSel">${enumFields.map(f => `<option value="${esc(f)}" ${f === enumSel ? 'selected' : ''}>${esc(meta(f).label)}</option>`).join('')}</select>
       </div>
       <div class="chart-box"><canvas id="enumChart"></canvas></div>
@@ -563,7 +605,7 @@ function renderHistory() {
             callbacks: {
               label: it => {
                 const p = it.raw._p; const u = m.unit ? ' ' + m.unit : '';
-                return p.min === p.max ? `${nf.format(p.med)}${u}` : `${nf.format(p.min)}–${nf.format(p.max)}${u} (${p.n} Meldungen)`;
+                return p.min === p.max ? `${nf.format(p.med)}${u}` : `${nf.format(p.min)}–${nf.format(p.max)}${u} (${t('nMessages', p.n)})`;
               },
               afterLabel: it => it.raw._p.file.split(/[\\/]/).pop(),
             },
@@ -574,7 +616,7 @@ function renderHistory() {
     card.querySelector('canvas').ondblclick = () => chart.resetZoom();
     state.charts.push(chart);
   });
-  if (!sel.length) grid.innerHTML = '<div class="muted">Oben Messgrößen auswählen.</div>';
+  if (!sel.length) grid.innerHTML = `<div class="muted">${esc(t('selectMetrics'))}</div>`;
 
   // Statusverlauf (Kategorien auf der y-Achse)
   if (enumSel) {
@@ -633,21 +675,21 @@ function renderActivity() {
 
   el.innerHTML = `
     <div class="grid kpis">
-      <div class="card kpi"><div class="label">Fahrzeug-Aktivitäten</div><div class="value">${bursts.length}</div><div class="note">Meldezeitpunkte, ≤ 60 s zusammengefasst</div></div>
-      <div class="card kpi"><div class="label">Einzelne Zeitstempel</div><div class="value">${events.length}</div><div class="note">aus allen Exporten, ohne Duplikate</div></div>
-      <div class="card kpi"><div class="label">Erste Meldung</div><div class="value" style="font-size:17px">${esc(events.length ? fmtDate(new Date(events[0].t)) : '–')}</div></div>
-      <div class="card kpi"><div class="label">Letzte Meldung</div><div class="value" style="font-size:17px">${esc(events.length ? fmtDate(new Date(events[events.length - 1].t)) : '–')}</div></div>
+      <div class="card kpi"><div class="label">${esc(t('actVehicle'))}</div><div class="value">${bursts.length}</div><div class="note">${esc(t('actVehicleNote'))}</div></div>
+      <div class="card kpi"><div class="label">${esc(t('actStamps'))}</div><div class="value">${events.length}</div><div class="note">${esc(t('actStampsNote'))}</div></div>
+      <div class="card kpi"><div class="label">${esc(t('firstMessage'))}</div><div class="value" style="font-size:17px">${esc(events.length ? fmtDate(new Date(events[0].t)) : '–')}</div></div>
+      <div class="card kpi"><div class="label">${esc(t('lastMessage'))}</div><div class="value" style="font-size:17px">${esc(events.length ? fmtDate(new Date(events[events.length - 1].t)) : '–')}</div></div>
     </div>
-    <div class="card"><div class="card-head"><h3>Aktivität pro ${unit === 'day' ? 'Tag' : 'Stunde'}</h3><span class="muted">Wann hat das Fahrzeug Daten gesendet?</span></div><div class="chart-box"><canvas id="actChart"></canvas></div></div>
+    <div class="card"><div class="card-head"><h3>${esc(t('actPer', unit))}</h3><span class="muted">${esc(t('actWhen'))}</span></div><div class="chart-box"><canvas id="actChart"></canvas></div></div>
     <div class="grid two">
-      <div class="card"><div class="card-head"><h3>Tageszeit</h3><span class="muted">Ortszeit</span></div><div class="chart-box"><canvas id="hourChart"></canvas></div></div>
-      <div class="card"><div class="card-head"><h3>Nachrichtentypen</h3></div>${bars(msgTypes) || '<span class="muted">keine</span>'}</div>
-      ${reportTypes.length ? `<div class="card"><div class="card-head"><h3>Berichtstypen</h3></div>${bars(reportTypes)}</div>` : ''}
-      ${reasons.length ? `<div class="card"><div class="card-head"><h3>Update-Gründe</h3></div>${bars(reasons)}</div>` : ''}
+      <div class="card"><div class="card-head"><h3>${esc(t('timeOfDay'))}</h3><span class="muted">${esc(t('localTime'))}</span></div><div class="chart-box"><canvas id="hourChart"></canvas></div></div>
+      <div class="card"><div class="card-head"><h3>${esc(t('msgTypes'))}</h3></div>${msgTypes.length ? bars(msgTypes) : `<span class="muted">${esc(t('none'))}</span>`}</div>
+      ${reportTypes.length ? `<div class="card"><div class="card-head"><h3>${esc(t('reportTypes'))}</h3></div>${bars(reportTypes)}</div>` : ''}
+      ${reasons.length ? `<div class="card"><div class="card-head"><h3>${esc(t('updateReasons'))}</h3></div>${bars(reasons)}</div>` : ''}
     </div>
-    <div class="card"><div class="card-head"><h3>Zeitstempel</h3><span class="muted">neueste zuerst</span></div>
-      <div class="table-wrap"><table><thead><tr><th>Zeit (Ortszeit)</th><th>Feld</th><th>Datei</th></tr></thead><tbody>
-      ${events.slice().reverse().slice(0, 500).map(e => `<tr><td class="num">${esc(fmtDate(new Date(e.t)))}</td><td title="${esc(e.f)}">${esc(meta(e.f).label)}</td><td class="mono">${esc(e.file.split(/[\\/]/).pop())}</td></tr>`).join('')}
+    <div class="card"><div class="card-head"><h3>${esc(t('timestamps'))}</h3><span class="muted">${esc(t('newestFirst'))}</span></div>
+      <div class="table-wrap"><table id="actTable"><thead><tr><th>${esc(t('colTimeLocal'))}</th><th>${esc(t('colField'))}</th><th>${esc(t('file'))}</th></tr></thead><tbody>
+      ${events.slice().reverse().slice(0, 500).map(e => `<tr><td class="num" data-sort="${e.t}">${esc(fmtDate(new Date(e.t)))}</td><td title="${esc(e.f)}">${esc(meta(e.f).label)}</td><td class="mono">${esc(e.file.split(/[\\/]/).pop())}</td></tr>`).join('')}
       </tbody></table></div></div>`;
 
   const c1 = new Chart($('#actChart'), {
@@ -655,8 +697,8 @@ function renderActivity() {
     data: { datasets: [{ data: perBucket, backgroundColor: css('--series-1'), borderRadius: 3, maxBarThickness: 28 }] },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
-      scales: { x: timeScale({ time: { unit, tooltipFormat: unit === 'day' ? 'dd.MM.yyyy' : 'dd.MM.yyyy HH:00', displayFormats: { hour: 'dd.MM. HH:mm', day: 'dd.MM.' } }, offset: true }), y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: css('--grid') } } },
-      plugins: { legend: { display: false }, zoom: zoomOpts, tooltip: { callbacks: { label: it => `${it.raw.y} Aktivität${it.raw.y === 1 ? '' : 'en'}` } } },
+      scales: { x: timeScale({ time: { unit, tooltipFormat: unit === 'day' ? t('chartFmt').dayTooltip : t('chartFmt').hourTooltip, displayFormats: { hour: t('chartFmt').hour, day: t('chartFmt').day } }, offset: true }), y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: css('--grid') } } },
+      plugins: { legend: { display: false }, zoom: zoomOpts, tooltip: { callbacks: { label: it => t('nActivities', it.raw.y) } } },
     },
   });
   $('#actChart').ondblclick = () => c1.resetZoom();
@@ -666,7 +708,7 @@ function renderActivity() {
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: css('--grid') } } },
-      plugins: { legend: { display: false }, tooltip: { callbacks: { title: it => `${it[0].label}:00–${it[0].label}:59 Uhr`, label: it => `${it.raw} Aktivität${it.raw === 1 ? '' : 'en'}` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { title: it => t('hourRange', it[0].label), label: it => t('nActivities', it.raw) } } },
     },
   });
   state.charts.push(c1, c2);
@@ -680,13 +722,13 @@ function renderRaw() {
   const fs = sortedFiles();
   el.innerHTML = `
     <div class="toolbar">
-      <input type="search" id="rawSearch" placeholder="Feld oder Wert suchen …" value="${esc(q)}">
-      <label>Export <select id="rawFile"><option value="all">alle (${fs.length})</option>${[...fs].reverse().map(f => `<option value="${esc(f.id)}" ${f.id === fsel ? 'selected' : ''}>${esc(fmtDate(fileTime(f)))}</option>`).join('')}</select></label>
-      <button class="btn small" id="csvBtn" type="button">Als CSV speichern</button>
+      <input type="search" id="rawSearch" placeholder="${esc(t('searchPh'))}" value="${esc(q)}">
+      <label>${esc(t('export'))} <select id="rawFile"><option value="all">${esc(t('allN', fs.length))}</option>${[...fs].reverse().map(f => `<option value="${esc(f.id)}" ${f.id === fsel ? 'selected' : ''}>${esc(fmtDate(fileTime(f)))}</option>`).join('')}</select></label>
+      <button class="btn small" id="csvBtn" type="button">${esc(t('saveCsv'))}</button>
       <span class="muted" id="rawCount"></span>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Bezeichnung</th><th>Feld</th><th>Typ</th><th>Werte (Anzahl)</th><th>Exporte</th></tr></thead><tbody id="rawBody"></tbody></table></div>`;
-  const kindDe = { num: 'Zahl', bool: 'Ja/Nein', date: 'Zeit', str: 'Text' };
+    <div class="table-wrap"><table id="rawTable"><thead><tr><th>${esc(t('colLabel'))}</th><th>${esc(t('colField'))}</th><th>${esc(t('colType'))}</th><th>${esc(t('colValues'))}</th><th>${esc(t('colExports'))}</th></tr></thead><tbody id="rawBody"></tbody></table></div>`;
+  const kinds = t('kind');
   const fill = () => {
     const query = $('#rawSearch').value.trim().toLowerCase();
     const fid = $('#rawFile').value;
@@ -700,17 +742,18 @@ function renderRaw() {
       for (const p of vals) { e.types.add(p.t); const cur = e.values.get(p.raw); e.values.set(p.raw, { p, n: (cur?.n || 0) + 1 }); }
     }
     const rows = [...idx.values()]
-      .map(e => ({ ...e, label: meta(e.f).label, group: meta(e.f).group }))
+      .map(e => ({ ...e, label: meta(e.f).label, group: groupLabel(meta(e.f).group) }))
       .filter(e => !query || e.f.toLowerCase().includes(query) || e.label.toLowerCase().includes(query) ||
         [...e.values.values()].some(v => v.p.raw.toLowerCase().includes(query) || fmtParsed(e.f, v.p).toLowerCase().includes(query)))
-      .sort((a, b) => (a.group + a.label).localeCompare(b.group + b.label, 'de'));
-    $('#rawCount').textContent = `${rows.length} Felder`;
+      .sort((a, b) => (a.group + a.label).localeCompare(b.group + b.label, lang));
+    $('#rawCount').textContent = t('nFields', rows.length);
     $('#rawBody').innerHTML = rows.map(e => {
       const vals = [...e.values.values()].sort((a, b) => b.n - a.n);
-      const shown = vals.slice(0, 12).map(v => `<span class="tag ${v.n > 1 ? 'accent' : ''}" title="Rohwert: ${esc(v.p.raw)}">${esc(fmtParsed(e.f, v.p))}${v.n > 1 ? ' ×' + v.n : ''}</span>`).join('');
-      const kind = e.types.size === 1 ? kindDe[[...e.types][0]] : 'gemischt';
-      return `<tr><td>${esc(e.label)}<div class="muted" style="font-size:11px">${esc(e.group)}</div></td><td class="mono">${esc(e.f)}</td><td>${kind}</td><td>${shown}${vals.length > 12 ? ` <span class="muted">+${vals.length - 12} weitere</span>` : ''}</td><td class="num">${e.files.size}</td></tr>`;
+      const shown = vals.slice(0, 12).map(v => `<span class="tag ${v.n > 1 ? 'accent' : ''}" title="${esc(t('rawValue', v.p.raw))}">${esc(fmtParsed(e.f, v.p))}${v.n > 1 ? ' ×' + v.n : ''}</span>`).join('');
+      const kind = e.types.size === 1 ? kinds[[...e.types][0]] : t('mixed');
+      return `<tr><td>${esc(e.label)}<div class="muted" style="font-size:11px">${esc(e.group)}</div></td><td class="mono">${esc(e.f)}</td><td>${esc(kind)}</td><td data-sort="${vals.length}">${shown}${vals.length > 12 ? ` <span class="muted">${esc(t('nMore', vals.length - 12))}</span>` : ''}</td><td class="num">${e.files.size}</td></tr>`;
     }).join('');
+    restoreSort($('#rawTable'));
   };
   $('#rawSearch').oninput = fill;
   $('#rawFile').onchange = fill;
@@ -720,10 +763,11 @@ function renderRaw() {
 
 function exportCsv() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines = [['datei', 'fin', 'exportzeit_utc', 'letzte_meldung_utc', 'feld', 'bezeichnung', 'wert_roh', 'wert'].join(';')];
+  const lines = [t('csvHead').join(';')];
+  const num = n => t('decimalComma') ? String(n).replace('.', ',') : String(n);
   for (const f of sortedFiles()) for (const r of f.records) {
     lines.push([f.name, state.hideVin ? maskVin(f.vin) : f.vin, f.exportTime?.toISOString(), f.dataTo?.toISOString(), r.f, meta(r.f).label, r.raw,
-      r.p.t === 'num' ? String(scaled(r.f, r.p.v)).replace('.', ',') : fmtParsed(r.f, r.p)].map(q).join(';'));
+      r.p.t === 'num' ? num(scaled(r.f, r.p.v)) : fmtParsed(r.f, r.p)].map(q).join(';'));
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -737,16 +781,16 @@ function renderFiles() {
   const files = [...state.files].sort((a, b) => (fileTime(b)?.getTime() ?? 0) - (fileTime(a)?.getTime() ?? 0));
   const empty = files.filter(f => f.empty).length;
   el.innerHTML = `
-    <div class="toolbar"><span class="muted">${files.length} Dateien${empty ? `, davon ${empty} ohne Inhalt` : ''} · gespeichert nur in diesem Browser</span></div>
-    <div class="table-wrap"><table><thead><tr><th>Datei</th><th>Quelle</th><th>FIN</th><th>Exportzeit</th><th>Meldungen von – bis</th><th>Datensätze</th><th></th></tr></thead><tbody>
+    <div class="toolbar"><span class="muted">${esc(t('filesSummary', files.length, empty))}</span></div>
+    <div class="table-wrap"><table id="filesTable"><thead><tr><th>${esc(t('file'))}</th><th>${esc(t('colSource'))}</th><th>${esc(t('vin'))}</th><th>${esc(t('colExportTime'))}</th><th>${esc(t('colRange'))}</th><th>${esc(t('colRecords'))}</th><th data-nosort></th></tr></thead><tbody>
     ${files.map(f => `<tr>
-      <td class="mono">${esc(f.name.split(/[\\/]/).pop())}${f.error ? `<div style="color:var(--bad)">${esc(f.error)}</div>` : ''}</td>
+      <td class="mono">${esc(f.name.split(/[\\/]/).pop())}${f.error ? `<div style="color:var(--bad)">${esc(t('readError', f.error))}</div>` : ''}</td>
       <td class="mono muted">${esc(f.source === 'Datei' ? '–' : f.source.split(/[\\/]/).pop())}</td>
       <td class="mono">${esc(maskVin(f.vin))}</td>
-      <td class="num">${esc(fmtDate(f.exportTime))}</td>
-      <td class="num">${f.dataFrom ? esc(fmtShort(f.dataFrom) + ' – ' + fmtShort(f.dataTo)) : '–'}</td>
-      <td class="num">${f.empty ? '<span class="tag">leer</span>' : f.records.length}</td>
-      <td><button class="btn small ghost" data-del="${esc(f.id)}" type="button">Entfernen</button></td></tr>`).join('')}
+      <td class="num" data-sort="${f.exportTime?.getTime() ?? ''}">${esc(fmtDate(f.exportTime))}</td>
+      <td class="num" data-sort="${f.dataFrom?.getTime() ?? ''}">${f.dataFrom ? esc(fmtShort(f.dataFrom) + ' – ' + fmtShort(f.dataTo)) : '–'}</td>
+      <td class="num" data-sort="${f.records.length}">${f.empty ? `<span class="tag">${esc(t('emptyTag'))}</span>` : f.records.length}</td>
+      <td><button class="btn small ghost" data-del="${esc(f.id)}" type="button">${esc(t('remove'))}</button></td></tr>`).join('')}
     </tbody></table></div>`;
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     state.files = state.files.filter(f => f.id !== b.dataset.del);
@@ -785,7 +829,7 @@ function bind() {
   $('#vinToggle').onclick = () => { state.hideVin = !state.hideVin; store.set('hideVin', state.hideVin); render(); };
   $('#clearBtn').onclick = async () => {
     if (!state.files.length) return;
-    if (!confirm('Alle geladenen Exporte aus der App (und dem Browser-Speicher) entfernen? Die Originaldateien bleiben unberührt.')) return;
+    if (!confirm(t('confirmClear'))) return;
     state.files = []; await db.clear(); render();
   };
   let depth = 0;
@@ -797,11 +841,51 @@ function bind() {
     e.preventDefault(); depth = 0; ov.hidden = true;
     addFiles(await filesFromDrop(e.dataTransfer));
   });
+  $('#themeSwitch').onclick = e => { const v = e.target.closest('button')?.dataset.themeOpt; if (v) setTheme(v); };
+  $('#langSwitch').onclick = e => { const v = e.target.closest('button')?.dataset.langOpt; if (v) setLang(v); };
+  $('#main').addEventListener('click', e => {
+    const th = e.target.closest('th.sortable'); const table = th?.closest('table[id]');
+    if (!table) return;
+    const col = th.cellIndex, cur = sorts[table.id];
+    sorts[table.id] = { col, dir: cur && cur.col === col ? -cur.dir : 1 };
+    store.set('sorts', sorts);
+    sortTable(table, col, sorts[table.id].dir);
+  });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => render());
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => state.charts.forEach(c => c.resize()), 150); });
 }
 
+// ---------- Farbschema & Sprache ----------
+function setTheme(theme) {
+  store.set('theme', theme);
+  if (theme === 'system') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
+  syncSwitches();
+  render();   // Diagramme lesen Farben beim Zeichnen aus den CSS-Variablen
+}
+function setLang(l) {
+  if (!I18N[l] || l === lang) return;
+  lang = l; store.set('lang', l);
+  setFormatters();
+  applyStaticTexts();
+  render();
+}
+function syncSwitches() {
+  const theme = store.get('theme', 'system');
+  document.querySelectorAll('[data-theme-opt]').forEach(b => b.setAttribute('aria-pressed', b.dataset.themeOpt === theme));
+  document.querySelectorAll('[data-lang-opt]').forEach(b => b.setAttribute('aria-pressed', b.dataset.langOpt === lang));
+}
+function applyStaticTexts() {
+  document.documentElement.lang = lang;
+  document.title = t('appTitle');
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); el.setAttribute('aria-label', el.title); });
+  syncSwitches();
+}
+
 async function init() {
+  applyStaticTexts();
   bind();
   const saved = await db.all();
   if (saved && saved.length) state.files = saved.map(p => buildFile(p));

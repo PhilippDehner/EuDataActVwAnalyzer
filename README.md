@@ -14,6 +14,9 @@ Dann Export-Dateien laden:
 
 Geladene Exporte merkt sich der Browser (IndexedDB) bis zum Klick auf **Alles entfernen**.
 
+Oben rechts lassen sich das Farbschema (hell / dunkel / System) und die Sprache (Deutsch / Englisch) umschalten.
+Alle Tabellen sind per Klick auf eine Spaltenüberschrift sortierbar (erneuter Klick kehrt die Reihenfolge um).
+
 ## Ansichten
 
 | Tab | Inhalt |
@@ -32,6 +35,7 @@ Geladene Exporte merkt sich der Browser (IndexedDB) bis zum Klick auf **Alles en
 - Als Zeitpunkt eines Exports gilt die letzte enthaltene Meldung (`car_captured_time`, `timestamp` …),
   alternativ die Zeit aus dem Dateinamen (`FIN_JJJJMMTTHHMMSS.json`, als UTC interpretiert).
 - `energy_contents.*.physical_value` wird als Zehntel-kWh angenommen (595,5 → 59,55 kWh).
-- Feldbezeichnungen und Übersetzungen stehen in `fields.js` und lassen sich dort ergänzen.
+- Feldbezeichnungen und Übersetzungen stehen in `fields.js` und lassen sich dort ergänzen,
+  die übrigen UI-Texte (Deutsch / Englisch) in `i18n.js`.
 
 Bibliotheken (lokal in `lib/`): Chart.js 4.4.1, chartjs-adapter-date-fns 3.0.0, chartjs-plugin-zoom 2.0.1, Hammer.js 2.0.8, JSZip 3.10.1.

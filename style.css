@@ -95,6 +95,20 @@ h3 { font-size: 13px; color: var(--muted); font-weight: 600; text-transform: upp
 .btn.ghost { background: transparent; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
 
+/* Umschalter Farbschema / Sprache */
+.seg {
+  display: inline-flex; gap: 2px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+}
+.seg button {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 30px;
+  padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.seg button:hover { color: var(--text); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+.seg svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
 /* Tabs */
 .tabs {
   display: flex; gap: 4px; padding: 0 24px; overflow-x: auto;
@@ -189,6 +203,11 @@ input[type="search"] { min-width: 240px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { position: sticky; top: 0; background: var(--surface-2); font-weight: 600; z-index: 1; cursor: default; }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--accent); }
+th.sortable::after { content: '↕'; margin-left: 6px; font-size: 11px; color: var(--muted); opacity: .5; }
+th[aria-sort="ascending"]::after { content: '▲'; opacity: 1; color: var(--accent); }
+th[aria-sort="descending"]::after { content: '▼'; opacity: 1; color: var(--accent); }
 tbody tr:hover { background: var(--surface-2); }
 td.mono, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 11px; color: var(--muted); margin: 1px 3px 1px 0; }
