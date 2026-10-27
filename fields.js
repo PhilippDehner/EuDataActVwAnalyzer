@@ -68,6 +68,87 @@ const FIELD_META = {
   'instrument_cluster_time':                                   { label: 'Kombiinstrument-Zeit', group: 'Zeit' },
   'profile_state_report.car_captured_time':                    { label: 'Profil erfasst', group: 'Zeit' },
   'profile_state_report.instrument_cluster_time':              { label: 'Profil Kombiinstrument-Zeit', group: 'Zeit' },
+  // nur im neueren Format (camelCase)
+  'batteryStatus.cruisingRange.range':                         { label: 'Reichweite', unit: 'km', group: 'Batterie' },
+  'careMode':                                                  { label: 'Batterieschonung', group: 'Laden' },
+  'plugStatusItem.plugConnectionState':                        { label: 'Stecker', group: 'Stecker' },
+  'plugStatusItem.plugLockState':                              { label: 'Stecker verriegelt', group: 'Stecker' },
+  'plugStatusItem.flapLockState':                              { label: 'Ladeklappe verriegelt', group: 'Stecker' },
+  'plugStatusItem.flap_open_state':                            { label: 'Ladeklappe offen', group: 'Stecker' },
+  'plugStatusItem.infrastructureState':                        { label: 'Ladeinfrastruktur', group: 'Stecker' },
+  'plugStatusItem.chargingPlugType':                           { label: 'Steckertyp', group: 'Stecker' },
+  'plugStatusItem.plugPosition':                               { label: 'Steckerposition', group: 'Stecker' },
+  'profiles.profileType':                                      { label: 'Profiltyp', group: 'Ladeprofil' },
+  'profiles.targetSOCPercentage':                              { label: 'Profil: Ziel-Ladestand', unit: '%', group: 'Ladeprofil' },
+  'profiles.maxChargingCurrent':                               { label: 'Profil: max. Ladestrom', group: 'Ladeprofil' },
+  'profiles.options.autoUnlockPlugWhenCharged':                { label: 'Profil: Stecker entriegeln', group: 'Ladeprofil' },
+  'profiles.options.usePrivateCurrentEnabled':                 { label: 'Profil: eigenen Strom nutzen', group: 'Ladeprofil' },
+  'profiles.timers.charging':                                  { label: 'Profil: Timer lädt', group: 'Ladeprofil' },
+  'profiles.timers.climatization':                             { label: 'Profil: Timer klimatisiert', group: 'Ladeprofil' },
+  'batteryClimatizationConsumption':                           { label: 'Verbrauch Batterieklima', group: 'Verbrauch' },
+  'interiorClimatizationConsumption':                          { label: 'Verbrauch Innenraumklima', group: 'Verbrauch' },
+  'residualConsumption':                                       { label: 'Restverbrauch', group: 'Verbrauch' },
+  'envelope.[].report.targetTemperature.temperature':          { label: 'Klima-Zieltemperatur', unit: '°C', group: 'Klima' },
+  'hood_info.hood_status.value':                               { label: 'Motorhaube', group: 'Zugang' },
+  'hood_info.hood_lock_status.value':                          { label: 'Motorhaube: Schloss', group: 'Zugang' },
+  'trunk_lid_info.trunk_lid_status.value':                     { label: 'Kofferraum', group: 'Zugang' },
+  'trunk_lid_info.trunk_lid_lock_status.value':                { label: 'Kofferraum: Schloss', group: 'Zugang' },
+  'service_maintenance_info.due_in_time.value':                { label: 'Inspektion fällig in', unit: 'Tage', group: 'Service' },
+  'service_maintenance_info.service_type':                     { label: 'Service-Art', group: 'Service' },
+  'vehicleError.errorDescription':                             { label: 'Fahrzeugfehler', group: 'Meldung' },
+};
+
+// Das neuere Exportformat (camelCase) benennt viele bekannte Felder anders. Diese Zuordnung
+// führt sie auf die Feldnamen des älteren Formats zurück, damit Übersicht und Verlauf beide
+// Formate gleich auswerten. Optional: Präfix, das Aufzählungswerten vorangestellt wird
+// (NOT_READY_FOR_CHARGING → CHARGE_STATE_NOT_READY_FOR_CHARGING). Indizes stehen als [].
+const FIELD_ALIAS = {
+  'batteryStatus.currentSOC_pct':                    'battery_state_report.soc',
+  'hvsoc_info.value':                                'battery_level_HV.value',
+  'mileage_info.value':                              'mileage.value',
+  'outdoortemperature_info.value':                   'outdoor_temperature',
+  'hvbatterytemperature_info.min_temperature.value': 'min_temperature',
+  'hvbatterytemperature_info.max_temperature.value': 'max_temperature',
+  'targetSoc_pct':                                   'settings.target_soc',
+  'state.threshold':                                 'battery_care_mode.charge_bcam_threshold',
+  'chargingStatus.chargePower_kW':                   'battery_state_report.charge_power',
+  'chargingStatus.currentChargeState':               ['charging_state_report.current_charge_state', 'CHARGE_STATE_'],
+  'chargingStatus.chargeType':                       ['charging_state_report.charge_type', 'CHARGE_TYPE_'],
+  'chargingStatus.chargeMode':                       ['charging_state_report.charge_mode', 'CHARGE_MODE_'],
+  'chargingStatus.chargingScenario':                 ['charging_state_report.charging_scenario', 'CHARGING_SCENARIO_'],
+  'chargingStatus.actionState':                      ['charging_state_report.immediate_action_state', 'IMMEDIATE_ACTION_STATE_'],
+  'chargingStatus.updateReason':                     ['update_reason', 'UPDATE_REASON_'],
+  'chargeModeSelection':                             ['settings.charge_mode_selection', 'CHARGE_MODE_SELECTION_'],
+  'maxChargingCurrent':                              ['settings.max_charge_current_ac', 'MAX_CHARGE_CURRENT_AC_'],
+  'autoUnlockPlugWhenCharged':                       ['settings.auto_unlock_ac', 'AUTO_UNLOCK_AC_'],
+  'nextChargingTimer.targetChargePercentageReachable': ['profile_state_report.next_charging_timer_information.target_reachability', 'TARGET_REACHABILITY_'],
+  'immediate_charging':                              'charge_mode_selection_options.immediate_charging',
+  'timer_charging':                                  'charge_mode_selection_options.timer_charging',
+  'timer_charging_climatization':                    'charge_mode_selection_options.timer_charging_climatization',
+  'preferred_charging_times':                        'charge_mode_selection_options.preferred_charging_times',
+  'home_storage_charging':                           'charge_mode_selection_options.home_storage_charging',
+  'immediate_discharging':                           'charge_mode_selection_options.immediate_discharging',
+  'only_own_current':                                'charge_mode_selection_options.only_own_current',
+  'parking_lights_info.left_status.value':           'parking_light_left',
+  'parking_lights_info.right_status.value':          'parking_light_right',
+  'cruise_range_primary_info.value':                 'batteryStatus.cruisingRange.range',
+  'carCapturedUTCTimestamp':                         'car_captured_utc_timestamp',
+  'carCapturedTimeStamp.seconds':                    'car_captured_time',
+  'envelope.[].context.carCapturedTimeStamp.seconds':'car_captured_time',
+  'instrumentClusterTime':                           'instrument_cluster_time',
+  'envelope.[].report.instrumentClusterTime':        'instrument_cluster_time',
+  'envelope.[].context.messageId':                   'message_id',
+  'payloadType':                                     'report_type',
+  'envelope.[].context.payloadType':                 'report_type',
+  'envelope.[].report.trigger':                      ['trigger', 'TRIGGER_'],
+  'envelope.[].report.windowHeatingState':           ['window_heating_state', 'WINDOW_HEATING_STATE_'],
+  'envelope.[].report.remainingClimatizationTime_min.seconds': 'remaining_climate_time',
+  'envelope.[].report.climatizationWithoutExternalPower': 'climatisation_settings.climatisation_without_hv_power',
+  'envelope.[].report.climatizationElementSettings.isClimatizationAtUnlock': 'climatisation_settings.climatisation_element_settings.is_climatisation_at_unlock',
+  'envelope.[].report.climatizationElementSettings.zoneFrontLeftEnabled':  'climatisation_settings.climatisation_element_settings.zone_front_left_enabled',
+  'envelope.[].report.climatizationElementSettings.zoneFrontRightEnabled': 'climatisation_settings.climatisation_element_settings.zone_front_right_enabled',
+  'envelope.[].report.climatizationElementSettings.zoneRearLeftEnabled':   'climatisation_settings.climatisation_element_settings.zone_rear_left_enabled',
+  'envelope.[].report.climatizationElementSettings.zoneRearRightEnabled':  'climatisation_settings.climatisation_element_settings.zone_rear_right_enabled',
 };
 
 // Übersetzungen für Aufzählungswerte
@@ -107,6 +188,21 @@ const ENUM_DE = {
   REPORT_TYPE_CONFIGURATIONS: 'Konfiguration',
   REPORT_TYPE_ENERGY_CONTENTS: 'Energieinhalte',
   VALID: 'gültig', INVALID: 'ungültig',
+  // neueres Format
+  CHARGE_MODE_IMMEDIATELY_DEFAULT: 'Sofort (Standard)',
+  CHARGE_TYPE_INVALID: 'ungültig', CHARGING_SCENARIO_INVALID: 'ungültig',
+  CHARGE_MODE_SELECTION_MANUAL: 'Manuell',
+  UPDATE_REASON_IGNITION_OFF: 'Zündung aus', UPDATE_REASON_IGNITION_ON: 'Zündung an',
+  CONNECTED: 'Verbunden', DISCONNECTED: 'Nicht verbunden',
+  LOCKED: 'Verriegelt', UNLOCKED: 'Entriegelt', OPEN: 'Offen', CLOSED: 'Geschlossen',
+  ON: 'An', OFF: 'Aus', ACTIVATED: 'Aktiviert', DEACTIVATED: 'Deaktiviert',
+  AVAILABLE: 'Verfügbar', UNAVAILABLE: 'Nicht verfügbar', UNDEFINED: 'undefiniert',
+  MAXIMUM: 'Maximum', REDUCED: 'Reduziert', PERMANENT: 'Permanent', MANUAL: 'Manuell',
+  LOCATION_BASED: 'Standortbasiert', CALCULATING: 'Wird berechnet',
+  TYPE_IS_ELECTRIC: 'Elektrisch', SERVICE_TYPE_INSPECTION: 'Inspektion',
+  'factory setting is used': 'Werkseinstellung',
+  immediatelyDefault: 'Sofort', immediatelyProfile: 'Sofort (Profil)', immediatelyStopped: 'Sofort (gestoppt)',
+  extendedProfile: 'Erweitert (Profil)', extendedStopped: 'Erweitert (gestoppt)',
 };
 
 // Farbe für Statuspunkte
@@ -118,6 +214,7 @@ const ENUM_TONE = {
   CHARGING_SCENARIO_IMMEDIATELY_CHARGING_ACTIVE: 'good',
   CLIMATISATION_STATE_HEATING: 'warn', CLIMATISATION_STATE_COOLING: 'info', CLIMATISATION_STATE_VENTILATION: 'info',
   TARGET_REACHABILITY_REACHABLE: 'good', TARGET_REACHABILITY_NOT_REACHABLE: 'bad',
+  CONNECTED: 'good', DISCONNECTED: 'warn', LOCKED: 'good', UNLOCKED: 'warn', ACTIVATED: 'good',
 };
 
 // ---------- Englisch ----------
@@ -126,6 +223,7 @@ const GROUP_EN = {
   Batterie: 'Battery', Laden: 'Charging', Ladeoptionen: 'Charging options', Ladetimer: 'Charging timer',
   Fahrzeug: 'Vehicle', Umgebung: 'Environment', Verbrauch: 'Consumption', Klima: 'Climate', Zugang: 'Access',
   Licht: 'Lights', Meldung: 'Message', Zeit: 'Time', Geschwindigkeitsprofil: 'Speed profile', Sonstiges: 'Other',
+  Ladehistorie: 'Charging history', Ladeprofil: 'Charging profile', Stecker: 'Plug', Service: 'Service', Steuergerät: 'Control unit',
 };
 const NOTE_EN = { 'Rohwert ÷ 10 (Annahme)': 'Raw value ÷ 10 (assumption)' };
 
@@ -196,6 +294,33 @@ const FIELD_EN = {
   'instrument_cluster_time': 'Instrument cluster time',
   'profile_state_report.car_captured_time': 'Profile captured',
   'profile_state_report.instrument_cluster_time': 'Profile instrument cluster time',
+  'batteryStatus.cruisingRange.range': 'Range',
+  'careMode': 'Battery care',
+  'plugStatusItem.plugConnectionState': 'Plug',
+  'plugStatusItem.plugLockState': 'Plug locked',
+  'plugStatusItem.flapLockState': 'Charging flap locked',
+  'plugStatusItem.flap_open_state': 'Charging flap open',
+  'plugStatusItem.infrastructureState': 'Charging infrastructure',
+  'plugStatusItem.chargingPlugType': 'Plug type',
+  'plugStatusItem.plugPosition': 'Plug position',
+  'profiles.profileType': 'Profile type',
+  'profiles.targetSOCPercentage': 'Profile: target SoC',
+  'profiles.maxChargingCurrent': 'Profile: max. charging current',
+  'profiles.options.autoUnlockPlugWhenCharged': 'Profile: unlock plug',
+  'profiles.options.usePrivateCurrentEnabled': 'Profile: use own power',
+  'profiles.timers.charging': 'Profile: timer charges',
+  'profiles.timers.climatization': 'Profile: timer climatises',
+  'batteryClimatizationConsumption': 'Battery climate consumption',
+  'interiorClimatizationConsumption': 'Interior climate consumption',
+  'residualConsumption': 'Residual consumption',
+  'envelope.[].report.targetTemperature.temperature': 'Climate target temperature',
+  'hood_info.hood_status.value': 'Bonnet',
+  'hood_info.hood_lock_status.value': 'Bonnet: lock',
+  'trunk_lid_info.trunk_lid_status.value': 'Boot',
+  'trunk_lid_info.trunk_lid_lock_status.value': 'Boot: lock',
+  'service_maintenance_info.due_in_time.value': 'Inspection due in',
+  'service_maintenance_info.service_type': 'Service type',
+  'vehicleError.errorDescription': 'Vehicle error',
 };
 
 const ENUM_EN = {
@@ -234,4 +359,28 @@ const ENUM_EN = {
   REPORT_TYPE_CONFIGURATIONS: 'Configuration',
   REPORT_TYPE_ENERGY_CONTENTS: 'Energy contents',
   VALID: 'valid', INVALID: 'invalid',
+  CHARGE_MODE_IMMEDIATELY_DEFAULT: 'Immediately (default)',
+  CHARGE_TYPE_INVALID: 'invalid', CHARGING_SCENARIO_INVALID: 'invalid',
+  CHARGE_MODE_SELECTION_MANUAL: 'Manual',
+  UPDATE_REASON_IGNITION_OFF: 'Ignition off', UPDATE_REASON_IGNITION_ON: 'Ignition on',
+  CONNECTED: 'Connected', DISCONNECTED: 'Disconnected',
+  LOCKED: 'Locked', UNLOCKED: 'Unlocked', OPEN: 'Open', CLOSED: 'Closed',
+  ON: 'On', OFF: 'Off', ACTIVATED: 'Activated', DEACTIVATED: 'Deactivated',
+  AVAILABLE: 'Available', UNAVAILABLE: 'Unavailable', UNDEFINED: 'undefined',
+  MAXIMUM: 'Maximum', REDUCED: 'Reduced', PERMANENT: 'Permanent', MANUAL: 'Manual',
+  LOCATION_BASED: 'Location-based', CALCULATING: 'Calculating',
+  TYPE_IS_ELECTRIC: 'Electric', SERVICE_TYPE_INSPECTION: 'Inspection',
+  'factory setting is used': 'Factory setting',
+  immediatelyDefault: 'Immediately', immediatelyProfile: 'Immediately (profile)', immediatelyStopped: 'Immediately (stopped)',
+  extendedProfile: 'Extended (profile)', extendedStopped: 'Extended (stopped)',
 };
+
+// Türen und Fenster (neueres Format), je Position
+for (const [pos, de, en] of [['front_left', 'vorne links', 'front left'], ['front_right', 'vorne rechts', 'front right'],
+  ['rear_left', 'hinten links', 'rear left'], ['rear_right', 'hinten rechts', 'rear right']]) {
+  const add = (f, label, labelEn, extra) => { FIELD_META[f] = { label, group: 'Zugang', ...extra }; FIELD_EN[f] = labelEn; };
+  add(`door_info.${pos}.door_status.value`, `Tür ${de}`, `Door ${en}`);
+  add(`door_info.${pos}.door_lock_status.value`, `Tür ${de}: Schloss`, `Door ${en}: lock`);
+  add(`window_info.${pos}.window_status.value`, `Fenster ${de}`, `Window ${en}`);
+  add(`window_info.${pos}.window_percentage_open.value`, `Fenster ${de} geöffnet`, `Window ${en} open`, { unit: '%' });
+}

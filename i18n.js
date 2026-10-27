@@ -21,7 +21,8 @@ const I18N = {
     dropTextHtml: 'JSON-Dateien oder ZIP-Archive aus dem VW&nbsp;Group EU&nbsp;Data&nbsp;Act&nbsp;Portal – gerne viele auf einmal oder einen ganzen Ordner.',
     dropPrivacy: 'Alles bleibt auf diesem Rechner. Es werden keine Daten hochgeladen.',
     dropRelease: 'Loslassen zum Laden',
-    confirmClear: 'Alle geladenen Exporte aus der App (und dem Browser-Speicher) entfernen? Die Originaldateien bleiben unberührt.',
+    confirmClear: 'Nochmals klicken, um alle geladenen Exporte aus der App (und dem Browser-Speicher) zu entfernen. Die Originaldateien bleiben unberührt.',
+    confirmClearBtn: 'Wirklich entfernen?', toastCleared: 'Alle Exporte entfernt',
 
     yes: 'ja', no: 'nein',
     readError: m => 'Konnte nicht gelesen werden: ' + m,
@@ -75,6 +76,21 @@ const I18N = {
     filesSummary: (n, empty) => `${n} Datei${n === 1 ? '' : 'en'}${empty ? `, davon ${empty} ohne Inhalt` : ''} · gespeichert nur in diesem Browser`,
     colSource: 'Quelle', colExportTime: 'Exportzeit', colRange: 'Meldungen von – bis', colRecords: 'Datensätze',
     emptyTag: 'leer', remove: 'Entfernen',
+
+    colFormat: 'Format', formatA: 'älteres Format', formatB: 'neueres Format', withCharging: 'mit Ladehistorie',
+    rawAlias: list => `im Export als: ${list}`,
+    doorsWindows: 'Türen & Fenster',
+    tabCharging: 'Laden',
+    chHintHtml: 'Ladehistorie aus dem neueren Exportformat. Mehrere Exporte werden zusammengeführt (gleiche Ladevorgänge nur einmal).',
+    chSessions: 'Ladevorgänge', chSessionsNote: (ac, dc) => `${ac}× AC · ${dc}× DC`,
+    chTotal: 'Geladen gesamt', chAvg: 'Ø je Ladevorgang', chPeak: 'Höchste Ladeleistung',
+    chActive: 'Aktive Ladezeit', chActiveNote: 'Summe aller Ladevorgänge', chMonthNote: 'laut Monatssumme des Fahrzeugs',
+    chPerDay: 'Geladene Energie pro Tag', chSrcAgg: 'Tagessummen des Fahrzeugs', chSrcSess: 'aus den Ladevorgängen summiert',
+    chCurve: 'Ladekurve', chCurvePower: 'Ladeleistung (kW)', chCurveSoc: 'Ladestand (%)', nPoints: n => `${n} Punkte`,
+    chTable: 'Ladevorgänge', chTableNote: 'neueste zuerst · Beginn: Tooltip zeigt Stecker an/ab',
+    chConnected: (a, b) => `Stecker verbunden: ${a} – ${b}`, chShowCurve: 'Kurve',
+    colStart: 'Beginn', colEnd: 'Ende', colDuration: 'Ladezeit', colChType: 'Art', colSoc: 'Ladestand',
+    colEnergy: 'Energie', colAvg: 'Ø Leistung', colPeak: 'Spitze', colMode: 'Modus',
   },
 
   en: {
@@ -96,7 +112,8 @@ const I18N = {
     dropTextHtml: 'JSON files or ZIP archives from the VW&nbsp;Group EU&nbsp;Data&nbsp;Act&nbsp;portal – many at once or a whole folder.',
     dropPrivacy: 'Everything stays on this computer. No data is uploaded.',
     dropRelease: 'Release to load',
-    confirmClear: 'Remove all loaded exports from the app (and browser storage)? The original files stay untouched.',
+    confirmClear: 'Click again to remove all loaded exports from the app (and browser storage). The original files stay untouched.',
+    confirmClearBtn: 'Really remove?', toastCleared: 'All exports removed',
 
     yes: 'yes', no: 'no',
     readError: m => 'Could not be read: ' + m,
@@ -150,6 +167,21 @@ const I18N = {
     filesSummary: (n, empty) => `${n} file${n === 1 ? '' : 's'}${empty ? `, ${empty} of them empty` : ''} · stored only in this browser`,
     colSource: 'Source', colExportTime: 'Export time', colRange: 'Messages from – to', colRecords: 'Records',
     emptyTag: 'empty', remove: 'Remove',
+
+    colFormat: 'Format', formatA: 'older format', formatB: 'newer format', withCharging: 'with charging history',
+    rawAlias: list => `in export as: ${list}`,
+    doorsWindows: 'Doors & windows',
+    tabCharging: 'Charging',
+    chHintHtml: 'Charging history from the newer export format. Several exports are merged (identical sessions counted once).',
+    chSessions: 'Charging sessions', chSessionsNote: (ac, dc) => `${ac}× AC · ${dc}× DC`,
+    chTotal: 'Total charged', chAvg: 'Avg. per session', chPeak: 'Peak charging power',
+    chActive: 'Active charging time', chActiveNote: 'sum of all sessions', chMonthNote: 'vehicle monthly total',
+    chPerDay: 'Energy charged per day', chSrcAgg: 'vehicle daily totals', chSrcSess: 'summed from sessions',
+    chCurve: 'Charging curve', chCurvePower: 'Charging power (kW)', chCurveSoc: 'State of charge (%)', nPoints: n => `${n} points`,
+    chTable: 'Charging sessions', chTableNote: 'newest first · start: tooltip shows plug in/out',
+    chConnected: (a, b) => `Plug connected: ${a} – ${b}`, chShowCurve: 'Curve',
+    colStart: 'Start', colEnd: 'End', colDuration: 'Duration', colChType: 'Type', colSoc: 'SoC',
+    colEnergy: 'Energy', colAvg: 'Avg. power', colPeak: 'Peak', colMode: 'Mode',
   },
 };
 

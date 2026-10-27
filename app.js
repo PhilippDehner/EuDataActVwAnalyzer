@@ -1,7 +1,11 @@
 'use strict';
 /* Cupra / VW Group EU-Data-Act-Export – lokale Visualisierung.
  * Die Exportdateien enthalten Datensätze {key, dataFieldName, value} ohne eigene Zeitangabe;
- * Werte lassen sich daher nur der jeweiligen Datei (dem Export) zuordnen. */
+ * Werte lassen sich daher nur der jeweiligen Datei (dem Export) zuordnen.
+ * Zwei Formate werden erkannt: das ältere (snake_case) und das neuere (camelCase, teils mit
+ * Ladehistorie). Gleichbedeutende Felder werden über FIELD_ALIAS (fields.js) zusammengeführt;
+ * was nur das neuere Format liefert, wird zusätzlich ausgewertet (Tab „Laden“). Das Feld
+ * timestampUtc des neueren Formats ist unbrauchbar (Sekunden als Millisekunden → 1970) und wird ignoriert. */
 
 // ---------- Hilfsfunktionen ----------
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -20,7 +24,10 @@ const fmtShort = d => (d instanceof Date && !isNaN(d)) ? dtfShort.format(d) : '�
 const lastSeg = f => f.split('.').pop();
 const isTimeField = f => /(time|timestamp)$/i.test(lastSeg(f));
 // Felder, deren Zeitwert den Erfassungszeitpunkt einer Meldung beschreibt (keine Prognosen)
-const isCaptureField = f => /(captured_time|captured_utc_timestamp)$/.test(f) || lastSeg(f) === 'timestamp';
+// (Zeitstempel in Listen wie powerCurve.[].timeCurve.[] sind Messpunkte, keine Meldungen)
+const isCaptureField = f => /(captured_time|captured_utc_timestamp)$/.test(f) || (lastSeg(f) === 'timestamp' && !f.includes('[]'));
+// Codierwerte von Steuergeräten haben keinen Klarnamen, nur eine ID wie 1224751803-0-188
+const isCodingField = f => /^\d+-\d+-\d+$/.test(f);
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 function toast(msg, ms = 3500) {
@@ -50,6 +57,8 @@ function parseValue(field, raw) {
   if (/^-?\d+(\.\d+)?(e-?\d+)?$/i.test(s)) {
     const n = Number(s);
     if (isTimeField(field) && Math.abs(n) > 1e11) return { t: 'date', v: new Date(n), raw: s };
+    // Unix-Sekunden: budgetStartTime, carCapturedTimeStamp.seconds …
+    if ((isTimeField(field) || /Time[sS]tamp\.seconds$/.test(field)) && n > 1e9 && n < 1e11) return { t: 'date', v: new Date(n * 1000), raw: s };
     return { t: 'num', v: n, raw: s };
   }
   const dur = s.match(/^(-?\d+(?:\.\d+)?)s$/);
@@ -62,7 +71,8 @@ function parseValue(field, raw) {
 }
 
 function prettyName(field) {
-  const seg = field.split('.').slice(-2).join(' · ').replace(/_/g, ' ');
+  if (isCodingField(field)) return 'ID ' + field;
+  const seg = field.split('.').filter(s => s !== '[]').slice(-2).join(' · ').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
   return seg.charAt(0).toUpperCase() + seg.slice(1);
 }
 function meta(f) {
@@ -71,13 +81,17 @@ function meta(f) {
   if (lang === 'de') return m;
   return { ...m, label: FIELD_EN[f] || m.label, note: m.note && (NOTE_EN[m.note] || m.note) };
 }
+const META_ORDER = Object.keys(FIELD_META);
 // Gruppen sind intern deutsche Schlüssel
 const groupLabel = g => lang === 'en' ? (GROUP_EN[g] || g) : g;
 function guessGroup(f) {
   if (/^setup_real_speed_ratios/.test(f)) return 'Geschwindigkeitsprofil';
-  if (/charg/.test(f)) return 'Laden';
-  if (/clima/.test(f)) return 'Klima';
-  if (/battery|energy/.test(f)) return 'Batterie';
+  if (/^(chargingSession|powerCurve|aggregation)\./.test(f)) return 'Ladehistorie';
+  if (isCodingField(f)) return 'Steuergerät';
+  if (/^profiles\./.test(f)) return 'Ladeprofil';
+  if (/charg/i.test(f)) return 'Laden';
+  if (/clima/i.test(f)) return 'Klima';
+  if (/battery|energy/i.test(f)) return 'Batterie';
   if (isTimeField(f)) return 'Zeit';
   return 'Sonstiges';
 }
@@ -149,19 +163,23 @@ function buildFile({ name, text, source }) {
     else {
       const json = JSON.parse(text);
       vin = json.vin || json.VIN || vin;
-      userId = json.user_id || null;
-      recs = findRecords(json) ?? flatten(json).filter(r => !/^(vin|user_id)$/i.test(r.dataFieldName));
+      userId = json.user_id || json.userId || null;
+      recs = findRecords(json) ?? flatten(json).filter(r => !/^(vin|user_?id)$/i.test(r.dataFieldName));
     }
   } catch (e) {
     return { ...base, error: e.message, records: [], byField: new Map() };
   }
   const records = recs.map(r => {
-    const f = String(r.dataFieldName ?? r.field ?? r.name ?? '').trim();
+    const orig = String(r.dataFieldName ?? r.field ?? r.name ?? '').trim();
     const raw = typeof r.value === 'object' && r.value !== null ? JSON.stringify(r.value) : r.value;
-    return { f, raw: raw == null ? '' : String(raw), p: parseValue(f, raw), key: r.key || null };
+    return normalizeRecord(orig, raw == null ? '' : String(raw), r.key || null);
   }).filter(r => r.f);
   const byField = new Map();
   for (const r of records) { if (!byField.has(r.f)) byField.set(r.f, []); byField.get(r.f).push(r.p); }
+  const charging = extractCharging(records);
+  // Format: neueres, wenn Felder umbenannt werden mussten oder camelCase überwiegt
+  const camel = records.filter(r => /[a-z][A-Z]/.test(r.orig.split('.')[0])).length;
+  const format = records.some(r => r.alias) || camel > records.length * 0.2 ? 'B' : 'A';
 
   const exportTime = exportTimeFromName(name);
   // Zeitraum der enthaltenen Meldungen
@@ -174,11 +192,58 @@ function buildFile({ name, text, source }) {
     if (maxT === null || t > maxT) maxT = t;
   }
   return {
-    ...base, vin, userId, records, byField, exportTime,
+    ...base, vin, userId, records, byField, exportTime, format, charging,
     dataFrom: minT !== null ? new Date(minT) : null,
     dataTo: maxT !== null ? new Date(maxT) : null,
     empty: records.length === 0,
   };
+}
+
+// Listenindizes zusammenfassen (chargingSession.[3].startSoc → chargingSession.[].startSoc) und
+// Felder des neueren Formats auf den gleichbedeutenden Namen des älteren abbilden.
+// f = Feld für die Auswertung, orig = Feldname wie in der Datei, alias = umbenanntes Muster.
+function normalizeRecord(orig, raw, key) {
+  const pat = orig.replace(/\[\d+\]/g, '[]');
+  const [f, pre] = [].concat(FIELD_ALIAS[pat] || pat);
+  const s = raw.trim();
+  const p = parseValue(orig, pre && /^[A-Z0-9_]+$/.test(s) && !s.startsWith(pre) ? pre + s : s);
+  p.raw = s;   // Rohwert bleibt so, wie er in der Datei steht
+  return { f, orig, alias: f !== pat ? pat : null, raw, p, key };
+}
+
+// Ladehistorie (nur im neueren Format): Ladevorgänge, Ladekurven, Tages- und Monatssummen
+function extractCharging(records) {
+  const at = (m, i) => { if (!m.has(i)) m.set(i, {}); return m.get(i); };
+  const sess = new Map(), curves = new Map(), agg = { day: new Map(), month: new Map() };
+  for (const r of records) {
+    const o = r.orig; let m;
+    if ((m = o.match(/^chargingSession\.\[(\d+)\]\.(\w+)/))) {
+      const s = at(sess, +m[1]);
+      if (m[2] === 'chargeMode') (s.chargeMode ||= []).push(r.raw); else s[m[2]] = r.p.v;
+    } else if ((m = o.match(/^powerCurve\.\[(\d+)\]\.timeCurve\.\[(\d+)\]\.(\w+)$/))) {
+      const c = at(curves, +m[1]); c.pts ||= new Map(); at(c.pts, +m[2])[m[3]] = r.p.v;
+    } else if ((m = o.match(/^powerCurve\.\[(\d+)\]\.sessionId$/))) at(curves, +m[1]).sessionId = r.raw;
+    else if ((m = o.match(/^aggregation\.(day|month)\.\[(\d+)\]\.(\w+)$/))) at(agg[m[1]], +m[2])[m[3]] = r.p.v;
+  }
+  const num = v => typeof v === 'number' ? v : null;
+  const date = v => v instanceof Date ? v : null;
+  const sessions = [...sess.values()].filter(s => s.sessionId).map(s => ({
+    id: String(s.sessionId), type: s.chargeType || null, modes: s.chargeMode || [],
+    connect: date(s.connectionTimestamp), disconnect: date(s.disconnectionTimestamp),
+    start: date(s.startChargingTimestamp), stop: date(s.stopChargingTimestamp),
+    socFrom: num(s.startSoc), socTo: num(s.endSoc), kwh: num(s.totalEnergyCharged),
+    avg: num(s.averageChargePower), peak: num(s.peakChargePower), active: num(s.activeChargingTime),
+  }));
+  const curveList = [...curves.entries()].filter(([, c]) => c.pts).map(([i, c]) => ({
+    id: c.sessionId || 'curve-' + i,
+    pts: [...c.pts.values()].filter(p => p.timestamp instanceof Date)
+      .map(p => ({ t: p.timestamp.getTime(), kw: num(p.chargePower), soc: num(p.soc), de: num(p.deltaChargeEnergy) }))
+      .sort((a, b) => a.t - b.t),
+  })).filter(c => c.pts.length);
+  const sums = m => [...m.values()].filter(d => d.date instanceof Date && typeof d.chargedEnergy === 'number')
+    .map(d => ({ t: d.date.getTime(), kwh: d.chargedEnergy })).sort((a, b) => a.t - b.t);
+  const days = sums(agg.day), months = sums(agg.month);
+  return sessions.length || curveList.length || days.length || months.length ? { sessions, curves: curveList, days, months } : null;
 }
 
 function parseCsv(text) {
@@ -342,11 +407,15 @@ function render() {
     ? `${vins.length ? t('vin') + ' ' + vins.map(maskVin).join(', ') : t('vinUnknown')} · ${t('nExports', fs.length)}` +
       (fs.length > 1 ? ` · ${fmtShort(fileTime(fs[0]))} – ${fmtShort(fileTime(fs[fs.length - 1]))}` : fs.length ? ` · ${fmtShort(fileTime(fs[0]))}` : '')
     : t('tagline');
+  // Tab „Laden“ nur, wenn ein Export Ladehistorie enthält (neueres Format)
+  const hasCharging = fs.some(f => f.charging);
+  $('#tabs [data-tab="charging"]').hidden = !hasCharging;
+  if (state.tab === 'charging' && !hasCharging) state.tab = 'overview';
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === state.tab));
-  for (const v of ['overview', 'history', 'activity', 'raw', 'files']) $('#view-' + v).hidden = !has || v !== state.tab;
+  for (const v of ['overview', 'charging', 'history', 'activity', 'raw', 'files']) $('#view-' + v).hidden = !has || v !== state.tab;
   destroyCharts();
   if (!has) return;
-  ({ overview: renderOverview, history: renderHistory, activity: renderActivity, raw: renderRaw, files: renderFiles })[state.tab]();
+  ({ overview: renderOverview, charging: renderCharging, history: renderHistory, activity: renderActivity, raw: renderRaw, files: renderFiles })[state.tab]();
   document.querySelectorAll('table[id]').forEach(restoreSort);
 }
 
@@ -435,6 +504,7 @@ function renderOverview() {
   const tiles = [
     tile('energy_contents.current_energy_content.physical_value', { extra: energyExtra }),
     tile('mileage.value', { prefer: 'max' }),
+    tile('batteryStatus.cruisingRange.range'),
     tile('battery_state_report.charge_power'),
     tile('battery_state_report.charge_rate'),
     tile('battery_state_report.remaining_charging_time_complete'),
@@ -447,8 +517,8 @@ function renderOverview() {
 
   // Status
   const statusFields = ['charging_state_report.current_charge_state', 'charging_state_report.charge_type', 'charging_state_report.charge_mode',
-    'charging_state_report.charging_scenario', 'climatisation_state', 'window_heating_state', 'locked', 'open',
-    'parking_light_left', 'parking_light_right', 'update_reason'];
+    'charging_state_report.charging_scenario', 'plugStatusItem.plugConnectionState', 'plugStatusItem.plugLockState', 'careMode',
+    'climatisation_state', 'window_heating_state', 'locked', 'open', 'parking_light_left', 'parking_light_right', 'update_reason'];
   const chips = statusFields.map(f => {
     const s = S(f); if (!s) return '';
     const vals = s.distinct.map(p => {
@@ -458,8 +528,10 @@ function renderOverview() {
     return `<div class="chip" title="${esc(f)}"><span class="k">${esc(meta(f).label)}</span><span class="v">${vals.join('<span class="alt"> / </span>')}</span></div>`;
   }).join('');
 
+  // Reihenfolge wie in fields.js, unbekannte Felder dahinter; Nanosekunden-Anteile weglassen
+  const order = f => { const i = META_ORDER.indexOf(f); return i < 0 ? 1e9 : i; };
   const kvBlock = (title, fields) => {
-    const rows = fields.map(f => { const s = S(f); return s ? `<div title="${esc(f)}">${esc(meta(f).label)}</div><div>${esc(displaySummary(f, s))}</div>` : ''; }).join('');
+    const rows = fields.filter(f => !/\.nanos$/.test(f)).sort((a, b) => order(a) - order(b)).map(f => { const s = S(f); return s ? `<div title="${esc(f)}">${esc(meta(f).label)}</div><div>${esc(displaySummary(f, s))}</div>` : ''; }).join('');
     return rows ? `<div class="card"><div class="card-head"><h3>${esc(title)}</h3></div><div class="kv">${rows}</div></div>` : '';
   };
   const allFields = [...file.byField.keys()];
@@ -477,13 +549,18 @@ function renderOverview() {
     <div class="grid kpis">${hero}${tiles}</div>
     ${chips ? `<div class="card"><div class="card-head"><h3>${esc(t('status'))}</h3><span class="muted">${esc(t('statusNote'))}</span></div><div class="chips">${chips}</div></div>` : ''}
     <div class="grid two">
-      ${kvBlock(t('chargeSettings'), [...byGroup('Laden').filter(f => /^settings\.|battery_care|charge_rate_unit/.test(f)), 'settings.target_soc'].filter((f, i, a) => a.indexOf(f) === i))}
+      ${kvBlock(t('chargeSettings'), [...byGroup('Laden').filter(f => /^settings\.|battery_care|charge_rate_unit|^careMode$/.test(f)), 'settings.target_soc'].filter((f, i, a) => a.indexOf(f) === i))}
       ${kvBlock(groupLabel('Ladeoptionen'), byGroup('Ladeoptionen'))}
       ${kvBlock(groupLabel('Ladetimer'), byGroup('Ladetimer'))}
+      ${kvBlock(groupLabel('Ladeprofil'), byGroup('Ladeprofil').filter(f => !/uuid|recurring/.test(f)))}
+      ${kvBlock(groupLabel('Stecker'), byGroup('Stecker'))}
+      ${kvBlock(t('doorsWindows'), byGroup('Zugang').filter(f => f !== 'locked' && f !== 'open'))}
+      ${kvBlock(groupLabel('Service'), byGroup('Service'))}
       ${kvBlock(groupLabel('Klima'), byGroup('Klima').filter(f => f !== 'climatisation_state' && f !== 'window_heating_state' && f !== 'remaining_climate_time'))}
       ${kvBlock(t('consumptionBattery'), [...byGroup('Verbrauch'), 'energy_contents.maximal_energy_content.physical_value', 'battery_level_HV.value', 'battery_level_HV.state', 'mileage.state'])}
       <div class="card"><div class="card-head"><h3>${esc(t('export'))}</h3></div><div class="kv">
         <div>${esc(t('file'))}</div><div class="mono">${esc(file.name.split(/[\\/]/).pop())}</div>
+        <div>${esc(t('colFormat'))}</div><div>${esc(formatLabel(file))}</div>
         <div>${esc(t('vin'))}</div><div class="mono">${esc(maskVin(file.vin))}</div>
         <div>${esc(t('exportTimeName'))}</div><div>${esc(fmtDate(file.exportTime))}</div>
         <div>${esc(t('firstMessage'))}</div><div>${esc(fmtDate(file.dataFrom))}</div>
@@ -495,6 +572,8 @@ function renderOverview() {
     </div>`;
   $('#fileSel').onchange = e => { state.selectedFile = e.target.value; render(); };
 }
+
+const formatLabel = f => f.empty || f.error ? '–' : t(f.format === 'B' ? 'formatB' : 'formatA') + (f.charging ? ' · ' + t('withCharging') : '');
 
 function countBy(arr, keyFn) {
   const m = new Map();
@@ -520,6 +599,135 @@ function timeScale(span) {
 }
 const zoomOpts = { zoom: { wheel: { enabled: true, modifierKey: 'ctrl' }, pinch: { enabled: true }, drag: { enabled: true, backgroundColor: 'rgba(176,112,62,.15)' }, mode: 'x' }, pan: { enabled: true, mode: 'x', modifierKey: 'shift' } };
 
+// ----- Laden (Ladehistorie des neueren Formats) -----
+// Mehrere Exporte überlappen sich: Ladevorgänge und Kurven über ihre sessionId, Tages- und
+// Monatssummen über das Datum zusammenführen; der jüngere Export gewinnt.
+function chargingData() {
+  const sess = new Map(), curves = new Map(), days = new Map(), months = new Map();
+  for (const f of sortedFiles()) {
+    const c = f.charging; if (!c) continue;
+    c.sessions.forEach(s => sess.set(s.id, s));
+    c.curves.forEach(k => { const cur = curves.get(k.id); if (!cur || k.pts.length >= cur.pts.length) curves.set(k.id, k); });
+    c.days.forEach(d => days.set(d.t, d));
+    c.months.forEach(d => months.set(d.t, d));
+  }
+  const byT = (a, b) => a.t - b.t;
+  const sessT = s => (s.start || s.connect)?.getTime() ?? 0;
+  return {
+    sessions: [...sess.values()].sort((a, b) => sessT(a) - sessT(b)),
+    curves: [...curves.values()].sort((a, b) => a.pts[0].t - b.pts[0].t),
+    days: [...days.values()].sort(byT), months: [...months.values()].sort(byT),
+  };
+}
+function fmtDur(sec) {
+  if (sec == null) return '–';
+  const h = Math.floor(sec / 3600), m = Math.round(sec % 3600 / 60);
+  return h ? `${h} h ${String(m).padStart(2, '0')} min` : `${m} min`;
+}
+
+function renderCharging() {
+  chartBase();
+  const el = $('#view-charging');
+  const { sessions, curves, days, months } = chargingData();
+  const sum = (a, k) => a.reduce((s, x) => s + (x[k] || 0), 0);
+  const kwh = n => `${nf.format(n)} kWh`;
+  const total = sum(sessions, 'kwh');
+  const ac = sessions.filter(s => s.type === 'AC').length, dc = sessions.filter(s => s.type === 'DC').length;
+  const peak = sessions.reduce((b, s) => s.peak != null && s.peak > (b?.peak ?? -1) ? s : b, null);
+  const first = sessions[0]?.start, last = sessions.at(-1)?.stop || sessions.at(-1)?.start;
+  const sessById = new Map(sessions.map(s => [s.id, s]));
+
+  // Energie pro Tag: Aggregation des Fahrzeugs, sonst aus den Ladevorgängen summiert
+  const fromAgg = days.length > 0;
+  let perDay = days.map(d => ({ x: d.t, y: d.kwh }));
+  if (!fromAgg) {
+    const m = new Map();
+    for (const s of sessions) { if (!s.start || s.kwh == null) continue; const d = new Date(s.start); d.setHours(0, 0, 0, 0); m.set(d.getTime(), (m.get(d.getTime()) || 0) + s.kwh); }
+    perDay = [...m].map(([x, y]) => ({ x, y })).sort((a, b) => a.x - b.x);
+  }
+  const monthFmt = new Intl.DateTimeFormat(t('locale'), { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+  const curve = curves.find(c => c.id === state.curve) || curves.at(-1);
+  const curveLabel = c => { const s = sessById.get(c.id); return `${fmtDate(new Date(c.pts[0].t))}${s?.kwh != null ? ' · ' + kwh(s.kwh) : ''} · ${t('nPoints', c.pts.length)}`; };
+
+  const kpi = (label, value, unit, note) => `<div class="card kpi"><div class="label">${esc(label)}</div><div class="value">${esc(value)}${unit ? `<small>${esc(unit)}</small>` : ''}</div><div class="note">${esc(note || '')}</div></div>`;
+  const modes = s => [...new Set(s.modes)].map(enumLabel).join(', ');
+
+  el.innerHTML = `
+    <div class="hint">${t('chHintHtml')}</div>
+    <div class="grid kpis">
+      ${kpi(t('chSessions'), String(sessions.length), '', t('chSessionsNote', ac, dc))}
+      ${kpi(t('chTotal'), nf.format(total), 'kWh', first ? `${fmtShort(first)} – ${fmtShort(last)}` : '')}
+      ${kpi(t('chAvg'), sessions.length ? nf.format(total / sessions.length) : '–', 'kWh', '')}
+      ${kpi(t('chPeak'), peak ? nf.format(peak.peak) : '–', 'kW', peak ? `${peak.type || ''} · ${fmtShort(peak.start)}` : '')}
+      ${kpi(t('chActive'), fmtDur(sum(sessions, 'active')), '', t('chActiveNote'))}
+      ${months.map(m => kpi(monthFmt.format(new Date(m.t)), nf.format(m.kwh), 'kWh', t('chMonthNote'))).join('')}
+    </div>
+    ${perDay.length ? `<div class="card"><div class="card-head"><h3>${esc(t('chPerDay'))}</h3><span class="muted">${esc(fromAgg ? t('chSrcAgg') : t('chSrcSess'))}</span></div><div class="chart-box"><canvas id="dayChart"></canvas></div></div>` : ''}
+    ${curve ? `<div class="card" id="curveCard"><div class="card-head"><h3>${esc(t('chCurve'))}</h3>
+      <select id="curveSel">${[...curves].reverse().map(c => `<option value="${esc(c.id)}" ${c === curve ? 'selected' : ''}>${esc(curveLabel(c))}</option>`).join('')}</select></div>
+      <div class="chart-box"><canvas id="curveChart"></canvas></div></div>` : ''}
+    ${sessions.length ? `<div class="card"><div class="card-head"><h3>${esc(t('chTable'))}</h3><span class="muted">${esc(t('chTableNote'))}</span></div>
+      <div class="table-wrap"><table id="sessTable"><thead><tr>
+        <th>${esc(t('colStart'))}</th><th>${esc(t('colEnd'))}</th><th>${esc(t('colDuration'))}</th><th>${esc(t('colChType'))}</th>
+        <th>${esc(t('colSoc'))}</th><th>${esc(t('colEnergy'))}</th><th>${esc(t('colAvg'))}</th><th>${esc(t('colPeak'))}</th><th>${esc(t('colMode'))}</th><th data-nosort></th>
+      </tr></thead><tbody>
+      ${[...sessions].reverse().map(s => `<tr>
+        <td class="num" data-sort="${s.start?.getTime() ?? ''}" title="${esc(t('chConnected', fmtDate(s.connect), fmtDate(s.disconnect)))}">${esc(fmtShort(s.start))}</td>
+        <td class="num" data-sort="${s.stop?.getTime() ?? ''}">${esc(fmtShort(s.stop))}</td>
+        <td class="num" data-sort="${s.active ?? ''}">${esc(fmtDur(s.active))}</td>
+        <td>${esc(s.type || '–')}</td>
+        <td class="num" data-sort="${s.socTo ?? ''}">${s.socFrom != null ? `${nf0.format(s.socFrom)} → ${nf0.format(s.socTo)} %` : '–'}</td>
+        <td class="num" data-sort="${s.kwh ?? ''}">${s.kwh != null ? esc(kwh(s.kwh)) : '–'}</td>
+        <td class="num" data-sort="${s.avg ?? ''}">${s.avg != null ? esc(nf.format(s.avg) + ' kW') : '–'}</td>
+        <td class="num" data-sort="${s.peak ?? ''}">${s.peak != null ? esc(nf.format(s.peak) + ' kW') : '–'}</td>
+        <td>${esc(modes(s))}</td>
+        <td>${curves.some(c => c.id === s.id) ? `<button class="btn small ghost" data-curve="${esc(s.id)}" type="button">${esc(t('chShowCurve'))}</button>` : ''}</td>
+      </tr>`).join('')}
+      </tbody></table></div></div>` : ''}`;
+
+  if (perDay.length) {
+    const c = new Chart($('#dayChart'), {
+      type: 'bar',
+      data: { datasets: [{ data: perDay, backgroundColor: css('--series-1'), borderRadius: 3, maxBarThickness: 28 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        scales: { x: timeScale({ time: { unit: 'day', tooltipFormat: t('chartFmt').dayTooltip, displayFormats: { day: t('chartFmt').day } }, offset: true }), y: { beginAtZero: true, grid: { color: css('--grid') }, ticks: { callback: v => nf.format(v) } } },
+        plugins: { legend: { display: false }, zoom: zoomOpts, tooltip: { callbacks: { label: it => kwh(it.raw.y) } } },
+      },
+    });
+    $('#dayChart').ondblclick = () => c.resetZoom();
+    state.charts.push(c);
+  }
+  if (curve) {
+    const c = new Chart($('#curveChart'), {
+      type: 'line',
+      data: {
+        datasets: [
+          { label: t('chCurvePower'), data: curve.pts.map(p => ({ x: p.t, y: p.kw })), borderColor: css('--series-1'), backgroundColor: css('--series-1'), borderWidth: 2, pointRadius: 0, stepped: true, yAxisID: 'y' },
+          { label: t('chCurveSoc'), data: curve.pts.map(p => ({ x: p.t, y: p.soc })), borderColor: css('--series-2'), backgroundColor: css('--series-2'), borderWidth: 2, borderDash: [5, 4], pointRadius: 0, yAxisID: 'y1' },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+          x: timeScale(),
+          y: { beginAtZero: true, title: { display: true, text: 'kW' }, grid: { color: css('--grid') }, ticks: { callback: v => nf.format(v) } },
+          y1: { position: 'right', min: 0, max: 100, title: { display: true, text: '%' }, grid: { display: false } },
+        },
+        plugins: { legend: { display: true, labels: { boxWidth: 12 } }, zoom: zoomOpts, tooltip: { callbacks: { label: it => `${it.dataset.label}: ${nf.format(it.raw.y)}` } } },
+      },
+    });
+    $('#curveChart').ondblclick = () => c.resetZoom();
+    state.charts.push(c);
+    $('#curveSel').onchange = e => { state.curve = e.target.value; render(); };
+  }
+  el.querySelectorAll('[data-curve]').forEach(b => b.onclick = () => {
+    state.curve = b.dataset.curve; render(); $('#curveCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 // ----- Verlauf -----
 const DEFAULT_SERIES = ['battery_state_report.soc', 'mileage.value', 'battery_state_report.charge_power', 'energy_contents.current_energy_content.physical_value', 'outdoor_temperature'];
 
@@ -528,10 +736,12 @@ function renderHistory() {
   const el = $('#view-history');
   const fs = sortedFiles();
   const idx = fieldIndex();
-  const numFields = [...idx.values()].filter(e => e.kind === 'num').map(e => e.f)
+  // Listenfelder (Ladehistorie), Nanosekunden-Anteile und Codierwerte sind keine Messgrößen eines Exports
+  const noSeries = f => f.includes('[]') || /\.nanos$/.test(f) || isCodingField(f);
+  const numFields = [...idx.values()].filter(e => e.kind === 'num' && !noSeries(e.f)).map(e => e.f)
     .sort((a, b) => (meta(a).group + meta(a).label).localeCompare(meta(b).group + meta(b).label, lang));
-  const enumFields = [...idx.values()].filter(e => e.kind === 'str' || e.kind === 'bool').map(e => e.f)
-    .filter(f => !/(message_id|transaction_id|value_type)$/.test(f));
+  const enumFields = [...idx.values()].filter(e => (e.kind === 'str' || e.kind === 'bool') && !noSeries(e.f)).map(e => e.f)
+    .filter(f => !/(message_id|transaction_id|value_type|uuid|identifier|sessionId|UserID)$/i.test(f));
   let sel = store.get('series', DEFAULT_SERIES).filter(f => numFields.includes(f));
   if (!sel.length) sel = numFields.filter(f => DEFAULT_SERIES.includes(f));
   let enumSel = store.get('enumSeries', 'charging_state_report.current_charge_state');
@@ -736,10 +946,11 @@ function renderRaw() {
     const saved = state.files;
     const files = fid === 'all' ? saved : saved.filter(f => f.id === fid);
     const idx = new Map();
-    for (const file of files) for (const [f, vals] of file.byField) {
-      if (!idx.has(f)) idx.set(f, { f, files: new Set(), values: new Map(), types: new Set() });
-      const e = idx.get(f); e.files.add(file.id);
-      for (const p of vals) { e.types.add(p.t); const cur = e.values.get(p.raw); e.values.set(p.raw, { p, n: (cur?.n || 0) + 1 }); }
+    for (const file of files) for (const r of file.records) {
+      if (!idx.has(r.f)) idx.set(r.f, { f: r.f, files: new Set(), values: new Map(), types: new Set(), aliases: new Set() });
+      const e = idx.get(r.f), p = r.p; e.files.add(file.id);
+      if (r.alias) e.aliases.add(r.alias);
+      e.types.add(p.t); const cur = e.values.get(p.raw); e.values.set(p.raw, { p, n: (cur?.n || 0) + 1 });
     }
     const rows = [...idx.values()]
       .map(e => ({ ...e, label: meta(e.f).label, group: groupLabel(meta(e.f).group) }))
@@ -751,7 +962,7 @@ function renderRaw() {
       const vals = [...e.values.values()].sort((a, b) => b.n - a.n);
       const shown = vals.slice(0, 12).map(v => `<span class="tag ${v.n > 1 ? 'accent' : ''}" title="${esc(t('rawValue', v.p.raw))}">${esc(fmtParsed(e.f, v.p))}${v.n > 1 ? ' ×' + v.n : ''}</span>`).join('');
       const kind = e.types.size === 1 ? kinds[[...e.types][0]] : t('mixed');
-      return `<tr><td>${esc(e.label)}<div class="muted" style="font-size:11px">${esc(e.group)}</div></td><td class="mono">${esc(e.f)}</td><td>${esc(kind)}</td><td data-sort="${vals.length}">${shown}${vals.length > 12 ? ` <span class="muted">${esc(t('nMore', vals.length - 12))}</span>` : ''}</td><td class="num">${e.files.size}</td></tr>`;
+      return `<tr><td>${esc(e.label)}<div class="muted" style="font-size:11px">${esc(e.group)}</div></td><td class="mono">${esc(e.f)}${e.aliases.size ? `<div class="muted" style="font-size:11px">${esc(t('rawAlias', [...e.aliases].join(', ')))}</div>` : ''}</td><td>${esc(kind)}</td><td data-sort="${vals.length}">${shown}${vals.length > 12 ? ` <span class="muted">${esc(t('nMore', vals.length - 12))}</span>` : ''}</td><td class="num">${e.files.size}</td></tr>`;
     }).join('');
     restoreSort($('#rawTable'));
   };
@@ -782,10 +993,11 @@ function renderFiles() {
   const empty = files.filter(f => f.empty).length;
   el.innerHTML = `
     <div class="toolbar"><span class="muted">${esc(t('filesSummary', files.length, empty))}</span></div>
-    <div class="table-wrap"><table id="filesTable"><thead><tr><th>${esc(t('file'))}</th><th>${esc(t('colSource'))}</th><th>${esc(t('vin'))}</th><th>${esc(t('colExportTime'))}</th><th>${esc(t('colRange'))}</th><th>${esc(t('colRecords'))}</th><th data-nosort></th></tr></thead><tbody>
+    <div class="table-wrap"><table id="filesTable"><thead><tr><th>${esc(t('file'))}</th><th>${esc(t('colSource'))}</th><th>${esc(t('colFormat'))}</th><th>${esc(t('vin'))}</th><th>${esc(t('colExportTime'))}</th><th>${esc(t('colRange'))}</th><th>${esc(t('colRecords'))}</th><th data-nosort></th></tr></thead><tbody>
     ${files.map(f => `<tr>
       <td class="mono">${esc(f.name.split(/[\\/]/).pop())}${f.error ? `<div style="color:var(--bad)">${esc(t('readError', f.error))}</div>` : ''}</td>
       <td class="mono muted">${esc(f.source === 'Datei' ? '–' : f.source.split(/[\\/]/).pop())}</td>
+      <td>${esc(formatLabel(f))}</td>
       <td class="mono">${esc(maskVin(f.vin))}</td>
       <td class="num" data-sort="${f.exportTime?.getTime() ?? ''}">${esc(fmtDate(f.exportTime))}</td>
       <td class="num" data-sort="${f.dataFrom?.getTime() ?? ''}">${f.dataFrom ? esc(fmtShort(f.dataFrom) + ' – ' + fmtShort(f.dataTo)) : '–'}</td>
@@ -827,10 +1039,20 @@ function bind() {
   $('#dropZone').onclick = () => $('#fileInput').click();
   $('#tabs').onclick = e => { const t = e.target.closest('button')?.dataset.tab; if (t) { state.tab = t; render(); } };
   $('#vinToggle').onclick = () => { state.hideVin = !state.hideVin; store.set('hideVin', state.hideVin); render(); };
-  $('#clearBtn').onclick = async () => {
+  // Zweistufig statt confirm(): manche Umgebungen unterdrücken Browser-Dialoge, confirm() liefert dann sofort false
+  const clearBtn = $('#clearBtn');
+  const resetClear = () => { clearTimeout(clearBtn._t); clearBtn.classList.remove('confirm'); clearBtn.textContent = t('clearAll'); };
+  clearBtn.onclick = async () => {
     if (!state.files.length) return;
-    if (!confirm(t('confirmClear'))) return;
+    if (!clearBtn.classList.contains('confirm')) {
+      clearBtn.classList.add('confirm'); clearBtn.textContent = t('confirmClearBtn');
+      toast(t('confirmClear'), 4000);
+      clearBtn._t = setTimeout(resetClear, 4000);
+      return;
+    }
+    resetClear();
     state.files = []; await db.clear(); render();
+    toast(t('toastCleared'));
   };
   let depth = 0;
   const ov = $('#dropOverlay');

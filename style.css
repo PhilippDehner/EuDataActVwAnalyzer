@@ -94,19 +94,23 @@ h3 { font-size: 13px; color: var(--muted); font-weight: 600; text-transform: upp
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.ghost { background: transparent; }
 .btn.small { padding: 4px 8px; font-size: 12px; }
+.btn.confirm { background: var(--bad); border-color: var(--bad); color: #fff; }
 
 /* Umschalter Farbschema / Sprache */
 .seg {
-  display: inline-flex; gap: 2px; padding: 2px;
+  display: inline-flex; align-items: stretch; gap: 2px; padding: 2px;
   border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
 }
+.seg:first-of-type { margin-left: 8px; }
 .seg button {
-  display: inline-flex; align-items: center; justify-content: center; min-width: 30px;
-  padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--muted);
-  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 30px; min-width: 32px; padding: 0 9px; border: 0; border-radius: 6px;
+  background: none; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .03em;
+  cursor: pointer; transition: background-color .15s, color .15s;
 }
-.seg button:hover { color: var(--text); }
-.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--text); }
+.seg button:hover { color: var(--text); background: var(--surface-2); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .seg svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Tabs */

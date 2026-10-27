@@ -22,6 +22,7 @@ Alle Tabellen sind per Klick auf eine Spaltenüberschrift sortierbar (erneuter K
 | Tab | Inhalt |
 |---|---|
 | Übersicht | Ladestand, Energieinhalt, Kilometerstand, Laden, Temperaturen, Status, Einstellungen eines Exports |
+| Laden | Nur bei Exporten im neueren Format mit Ladehistorie: Ladevorgänge, Energie pro Tag/Monat, Ladekurven |
 | Verlauf | Zeitreihen aller Zahlenwerte über mehrere Exporte, Statusverlauf (z. B. Ladezustand) |
 | Aktivität | Wann das Fahrzeug Daten gesendet hat (pro Stunde/Tag, Tageszeit), Nachrichtentypen |
 | Rohdaten | Alle Felder mit Werten, durchsuchbar, CSV-Export |
@@ -30,6 +31,15 @@ Alle Tabellen sind per Klick auf eine Spaltenüberschrift sortierbar (erneuter K
 ## Hinweise zum Datenformat
 
 - Ein Export ist ein JSON `{ vin, user_id, Data: [{ key, dataFieldName, value }] }`.
+- Es gibt zwei Formate, die automatisch erkannt werden (Tab **Dateien**, Spalte „Format“):
+  - **älteres Format**: snake_case-Felder (`battery_state_report.soc`, `mileage.value` …)
+  - **neueres Format**: camelCase-Felder (`batteryStatus.currentSOC_pct`, `mileage_info.value` …), `userId`,
+    teils mit Ladehistorie (`chargingSession.[n]`, `powerCurve.[n].timeCurve.[n]`, `aggregation.day/month`)
+    sowie Türen, Fenster, Stecker, Service und Steuergeräte-Codierwerten.
+  Gleichbedeutende Felder werden über `FIELD_ALIAS` in `fields.js` auf die Namen des älteren Formats abgebildet,
+  sodass Übersicht und Verlauf beide Formate gemeinsam auswerten. Im Tab **Rohdaten** steht beim Feld,
+  unter welchem Namen es im Export vorkam. Das Feld `timestampUtc` des neueren Formats ist fehlerhaft
+  (Datum im Januar 1970) und wird ignoriert.
 - Die Datensätze haben **keinen eigenen Zeitstempel** und sind gemischt aus mehreren Fahrzeugmeldungen.
   Unterscheiden sich Werte innerhalb eines Exports, zeigt die App den Bereich (z. B. 50–56 %).
 - Als Zeitpunkt eines Exports gilt die letzte enthaltene Meldung (`car_captured_time`, `timestamp` …),
